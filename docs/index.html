@@ -103,12 +103,12 @@ td.green{color:var(--green)}td.orange{color:var(--orange)}td.red{color:var(--red
 <div class="mermaid-wrapper">
 <div class="mermaid">
 graph TD
-    MHA["MHA - nanoGPT<br/>Q=K=V头数<br/>cache: OH*T*d"]
+    MHA["MHA - nanoGPT<br/>Q=K=V<br/>cache O(H*T*d)"]
     GQA["GQA - MiniMind<br/>KV头少于Q头<br/>cache省50%"]
     MQA["MQA - DeepSeek-V4<br/>KV头=1<br/>cache省64x"]
-    MLA["MLA - GLM-5.2/Kimi-K3<br/>KV低秩压缩<br/>cache省50x"]
-    LINEAR["线性注意力<br/>Qwen3.6/Kimi-K3<br/>递推状态恒定<br/>cache不随T增长"]
-    SPARSE["稀疏注意力<br/>GLM-5.2/DeepSeek-V4<br/>top-k选择key<br/>精确但需索引"]
+    MLA["MLA - GLM-5.2 / Kimi-K3<br/>KV低秩压缩<br/>cache省50x"]
+    LINEAR["线性注意力<br/>Qwen3.6 / Kimi-K3<br/>递推状态恒定<br/>cache不随T增长"]
+    SPARSE["稀疏注意力<br/>GLM-5.2 / DeepSeek-V4<br/>top-k选择key<br/>精确但需索引"]
     MHA --> GQA
     GQA --> MQA
     MHA --> MLA
@@ -142,32 +142,29 @@ graph TD
 <div class="collapsible-content open">
 <div class="mermaid-wrapper">
 <div class="mermaid">
-flowchart TB
+graph TD
     IN["input_ids B,T"]
-    WTE["wte: EmbeddingV, d"]
-    POS["pos: arangeT"]
-    WPE["wpe: Embeddingblock_size, d"]
-    ADD["tok_emb + pos_emb B,T,d"]
+    WTE["wte Embedding V,d"]
+    WPE["wpe Embedding block_size,d"]
+    ADD["tok_emb + pos_emb"]
     DROP["Dropout"]
     IN --> WTE --> ADD
-    POS --> WPE --> ADD
+    WPE --> ADD
     ADD --> DROP
     DROP --> BLK1["Block 1"]
-    subgraph blkdetail["Block 内部结构 重复12次"]
-        LN1["ln_1: LayerNorm"]
-        ATTN["CausalSelfAttention<br/>c_attn: Linear d to 3d<br/>SDPA is_causal=True<br/>c_proj: Linear d to d"]
-        R1["+ 残差"]
-        LN2["ln_2: LayerNorm"]
-        MLP["MLP<br/>c_fc: d to 4d then GELU<br/>c_proj: 4d to d"]
-        R2["+ 残差"]
-        LN1 --> ATTN --> R1 --> LN2 --> MLP --> R2
-    end
-    BLK1 --> BLK2["Block 2 ... Block 12"]
-    BLK2 --> LNF["ln_f: LayerNorm"]
-    LNF --> LH["lm_head: Linear d to V<br/>tied with wte"]
+    LN1["ln_1 LayerNorm"]
+    ATTN["CausalSelfAttention<br/>c_attn Linear d to 3d<br/>SDPA is_causal=True<br/>c_proj Linear d to d"]
+    R1["+ 残差"]
+    LN2["ln_2 LayerNorm"]
+    MLP["MLP<br/>c_fc d to 4d GELU<br/>c_proj 4d to d"]
+    R2["+ 残差"]
+    BLK1 --> LN1 --> ATTN --> R1 --> LN2 --> MLP --> R2
+    R2 --> BLK2["Block 2 to Block 12"]
+    BLK2 --> LNF["ln_f LayerNorm"]
+    LNF --> LH["lm_head Linear d to V<br/>tied with wte"]
     LH --> LOGITS["logits B,T,V"]
-    LOGITS -->|"训练"| CE["cross_entropy shift"]
-    LOGITS -->|"推理"| LAST["只取最后位置"]
+    LOGITS --> CE["训练: cross_entropy shift"]
+    LOGITS --> LAST["推理: 只取最后位置"]
 </div>
 </div>
 </div>
@@ -214,28 +211,26 @@ flowchart TB
 <div class="collapsible-content open">
 <div class="mermaid-wrapper">
 <div class="mermaid">
-flowchart TB
+graph TD
     IN["input_ids B,T"]
     EMB["embed_tokens"]
-    START["start_pos = past_kv shape<br/>从KV cache推断位置"]
+    START["start_pos from past_kv<br/>从KV cache推断位置"]
     ROPE["freqs_cos/sin 切片"]
     IN --> EMB --> START --> ROPE
     ROPE --> BLK1["Block 1"]
-    subgraph blkdetail["MiniMindBlock 重复8次"]
-        LN1["input_layernorm RMSNorm 无bias"]
-        ATTN["Attention GQA + KV cache<br/>q_proj: 8头 / k,v_proj: 4头<br/>q_norm/k_norm RMSNorm<br/>RoPE to cat past_kv to repeat_kv to SDPA<br/>o_proj"]
-        R1["+ 残差"]
-        LN2["post_attention_layernorm"]
-        FFN["FeedForward SwiGLU<br/>down silu gate x up<br/>或 MoE: 4专家 top-1 + aux_loss"]
-        R2["+ 残差"]
-        LN1 --> ATTN --> R1 --> LN2 --> FFN --> R2
-    end
-    BLK1 --> BLKN["Block 2 ... Block 8"]
+    LN1["input_layernorm RMSNorm"]
+    ATTN["Attention GQA + KV cache<br/>q_proj 8头 k,v_proj 4头<br/>q_norm k_norm RMSNorm<br/>RoPE cat past_kv repeat_kv SDPA<br/>o_proj"]
+    R1["+ 残差"]
+    LN2["post_attention_layernorm"]
+    FFN["FeedForward SwiGLU<br/>down silu gate up<br/>或 MoE 4专家 top-1 aux_loss"]
+    R2["+ 残差"]
+    BLK1 --> LN1 --> ATTN --> R1 --> LN2 --> FFN --> R2
+    R2 --> BLKN["Block 2 to Block 8"]
     BLKN --> NORM["norm RMSNorm"]
     NORM --> LH["lm_head tied=embed"]
     LH --> LOGITS["logits B,T,V"]
-    LOGITS -->|"训练"| SHIFT["shift: logits shifted vs labels shifted"]
-    LOGITS -->|"推理"| GEN["generate KV cache + temp + top_k + top_p<br/>+ repetition_penalty + EOS + streamer"]
+    LOGITS --> SHIFT["训练: shift logits vs labels"]
+    LOGITS --> GEN["推理: generate<br/>KV cache temp top_k top_p<br/>rep_penalty EOS streamer"]
 </div>
 </div>
 </div>
@@ -281,7 +276,7 @@ flowchart TB
 <div class="collapsible-content open">
 <div class="mermaid-wrapper">
 <div class="mermaid">
-flowchart TB
+graph TD
     IDS["input_ids"]
     PIX["pixel_values"]
     EMB["embed_tokens 5120"]
@@ -294,28 +289,16 @@ flowchart TB
     IDS --> GRI --> ROT
     MS --> DEC["64层 DecoderLayer"]
     ROT --> DEC
-    subgraph lin_block["Gated DeltaNet x48 线性注意力"]
-        LIN_PROJ["in_proj_qkv/z/b/a 四投影<br/>Q 16头 K 16头 V 48头 各128dim"]
-        CONV["short conv k=4 SiLU"]
-        DELTA["delta rule 递推<br/>S=diag g S + beta v-Sk k<br/>recurrent_state 48x128x128 恒定"]
-        GATE_OUT["RMSNormGated silu z 输出门"]
-        LIN_PROJ --> CONV --> DELTA --> GATE_OUT
-    end
-    subgraph full_block["Gated GQA x16 全注意力"]
-        QPROJ["q_proj翻倍出gate"]
-        APR["partial_rotary 0.25 只旋转64维"]
-        SG["sigmoid gate 输出门控"]
-        QPROJ --> APR --> SG
-    end
-    DEC --> lin_block
-    DEC --> full_block
-    lin_block --> MLP["SwiGLU 17408"]
-    full_block --> MLP
-    DEC --> NORM["RMSNorm"]
+    LIN["Gated DeltaNet x48 线性注意力<br/>in_proj_qkv z b a 四投影<br/>Q 16头 K 16头 V 48头 各128dim<br/>short conv k=4 SiLU<br/>delta rule 递推 状态恒定<br/>RMSNormGated silu 输出门"]
+    FULL["Gated GQA x16 全注意力<br/>q_proj翻倍出gate<br/>partial_rotary 0.25 只旋转64维<br/>sigmoid gate 输出门控"]
+    MLP["SwiGlU 17408"]
+    DEC --> LIN --> MLP
+    DEC --> FULL --> MLP
+    MLP --> NORM["RMSNorm"]
     NORM --> LMH["lm_head to 248320"]
-    LMH -.-> MTP["MTP 1层 HF不实现 vLLM用"]
-    style lin_block fill:#2a1a3a,color:#fff
-    style full_block fill:#1a2a3a,color:#fff
+    LMH --> MTP["MTP 1层 HF不实现 vLLM用"]
+    style LIN fill:#2a1a3a,color:#fff
+    style FULL fill:#1a2a3a,color:#fff
 </div>
 </div>
 </div>
@@ -370,33 +353,29 @@ flowchart TB
 <div class="collapsible-content open">
 <div class="mermaid-wrapper">
 <div class="mermaid">
-flowchart TB
+graph TD
     IN["input_ids"]
     EMB["embed 154880x6144"]
     ROPE["RoPE interleave theta=8e6 dim=64"]
     IN --> EMB --> ROPE
-    ROPE --> D3["3层 Dense: SwiGLU 12288"]
-    D3 --> M75["75层 MoE: 256E/8选/1共享 sigmoid路由"]
-    subgraph mla_detail["MLA注意力 每层"]
-        QA["q_a_proj 6144 to 2048 压缩8.5x"]
-        QB["q_b_proj 2048 to 16384 解压64头x256"]
-        QS["split nope 192 + rope 64"]
-        KVA["kv_a_proj 6144 to 576 压缩"]
-        KVB["kv_b_proj 512 to 28672 解压"]
-        ATT2["attention"]
-        QA --> QB --> QS --> ATT2
-        KVA --> KVB --> ATT2
-    end
-    subgraph dsa_detail["DSA Indexer + IndexShare"]
-        DF["full层 21个: 算索引<br/>ReLU QK^T 打分 to top-2048"]
-        DS["shared层 57个: 复用上层索引<br/>indexer=None 省73%计算"]
-        DF --> DS
-    end
+    ROPE --> D3["3层 Dense SwiGlU 12288"]
+    D3 --> M75["75层 MoE 256E/8选/1共享 sigmoid路由"]
+    QA["q_a_proj 6144 to 2048 压缩8.5x"]
+    QB["q_b_proj 2048 to 16384 解压64头x256"]
+    QS["split nope 192 + rope 64"]
+    KVA["kv_a_proj 6144 to 576 压缩"]
+    KVB["kv_b_proj 512 to 28672 解压"]
+    ATT2["MLA attention"]
+    QA --> QB --> QS --> ATT2
+    KVA --> KVB --> ATT2
+    DF["full层 21个 算索引<br/>ReLU QK^T 打分 to top-2048"]
+    DS["shared层 57个 复用上层索引<br/>indexer=None 省73%计算"]
+    DF --> DS
     M75 --> NORM["RMSNorm"]
     NORM --> LMH["lm_head to 154880"]
-    LMH -.-> MTP["MTP 1层 + 索引复用"]
-    style dsa_detail fill:#1a3a2a,color:#e6edf3
-    style mla_detail fill:#1a2332,color:#e6edf3
+    LMH --> MTP["MTP 1层 + 索引复用"]
+    style DS fill:#1a3a2a,color:#e6edf3
+    style ATT2 fill:#1a2332,color:#e6edf3
 </div>
 </div>
 </div>
@@ -438,7 +417,7 @@ flowchart TB
 <div class="collapsible-content open">
 <div class="mermaid-wrapper">
 <div class="mermaid">
-flowchart TB
+graph TD
     PIX["pixel_values"]
     VIT["MoonViT-V2 Conv2d 14x14 + 3D PosEmb<br/>27层ViT + tpool + PatchMerger to 7168"]
     IDS["input_ids"]
@@ -446,12 +425,14 @@ flowchart TB
     MERGE["占位token 163605替换"]
     PIX --> VIT --> MERGE
     IDS --> EMB --> MERGE
-    MERGE --> L0["Layer0: Dense + KDA"]
-    L0 --> KDA["69层 KDA + MoE<br/>ShortConv k=4 + delta rule<br/>safe_gate lower_bound=-5<br/>state 96x128x128 恒定<br/>FusedRMSNormGated sigmoid"]
-    L0 --> MLA["24层 Gated MLA + MoE<br/>Q LoRA 7168 to 1536 to 96x192<br/>KV LoRA 7168 to 576 to 96x256<br/>use_nope=true 无RoPE<br/>use_output_gate=true sigmoid门"]
-    KDA --> AR["AttnRes 每12层跨块残差<br/>RMSNorm + 1D打分 + softmax + 加权"]
-    MLA --> AR
-    AR --> MOE["LatentMoE 7168 to 3584 潜空间<br/>896E sigmoid top-16 2共享<br/>SiTU-GLU beta=4 有界激活"]
+    MERGE --> L0["Layer0 Dense + KDA"]
+    KDA["69层 KDA + MoE<br/>ShortConv k=4 + delta rule<br/>safe_gate lower_bound=-5<br/>state 96x128x128 恒定<br/>FusedRMSNormGated sigmoid"]
+    MLA["24层 Gated MLA + MoE<br/>Q LoRA 7168 to 1536 to 96x192<br/>KV LoRA 7168 to 576 to 96x256<br/>use_nope=true 无RoPE<br/>use_output_gate=true sigmoid门"]
+    AR["AttnRes 每12层跨块残差<br/>RMSNorm 1D打分 softmax 加权"]
+    MOE["LatentMoE 7168 to 3584 潜空间<br/>896E sigmoid top-16 2共享<br/>SiTU-GLU beta=4 有界激活"]
+    L0 --> KDA --> AR
+    L0 --> MLA --> AR
+    AR --> MOE
     MOE --> NORM["AttnRes最终融合 + RMSNorm"]
     NORM --> LMH["lm_head to 163840"]
     style KDA fill:#2a1a3a,color:#fff
@@ -498,32 +479,29 @@ flowchart TB
 <div class="collapsible-content open">
 <div class="mermaid-wrapper">
 <div class="mermaid">
-flowchart TD
+graph TD
     IN["input_ids"]
     EMB["embed 129280x4096"]
     HC["HC展开 4副本"]
     IN --> EMB --> HC
     HC --> BLK["43层 Block"]
-    subgraph blk_detail["每层 Block 内部"]
-        HP1["hc_pre 4 to 1<br/>Sinkhorn 20轮双随机矩阵"]
-        ATTN["Attention MQA变体<br/>wq_a 4096 to 1024 Q压缩<br/>wkv 4096 to 512 单头MQA<br/>RoPE末64维<br/>sparse_attn 滑窗128 + CSA/HCA"]
-        HP1P["hc_post 1 to 4"]
-        HP2["hc_pre 4 to 1"]
-        MOE["MoE<br/>sqrtsoftplus<br/>top-6 noaux_tc<br/>FP4专家 swiglu_limit=10<br/>1共享 BF16"]
-        HP2P["hc_post 1 to 4"]
-        HP1 --> ATTN --> HP1P --> HP2 --> MOE --> HP2P
-    end
-    BLK --> HH["hc_head sigmoid 4 to 1"]
+    HP1["hc_pre 4 to 1<br/>Sinkhorn 20轮双随机矩阵"]
+    ATTN["Attention MQA变体<br/>wq_a 4096 to 1024 Q压缩<br/>wkv 4096 to 512 单头MQA<br/>RoPE末64维<br/>sparse_attn 滑窗128 CSA HCA"]
+    HP1P["hc_post 1 to 4"]
+    HP2["hc_pre 4 to 1"]
+    MOE["MoE<br/>sqrtsoftplus<br/>top-6 noaux_tc<br/>FP4专家 swiglu_limit=10<br/>1共享 BF16"]
+    HP2P["hc_post 1 to 4"]
+    BLK --> HP1 --> ATTN --> HP1P --> HP2 --> MOE --> HP2P
+    HP2P --> HH["hc_head sigmoid 4 to 1"]
     HH --> NORM["RMSNorm"]
     NORM --> LMH["lm_head to 129280"]
-    subgraph dspark_detail["DSpark 3层草稿 仅0731"]
-        FE["forward_embed<br/>真token+噪声x4 block_size=5 去噪"]
-        DSA["DSparkAttention<br/>wkv main_x 从主模型深层建KV<br/>layer 40,41,42 隐状态注入"]
-        FH["Markov bigram 头 rank=256<br/>confidence 自评头<br/>7草稿token"]
-        FE --> DSA --> FH
-    end
-    style blk_detail fill:#1a2332,color:#e6edf3
-    style dspark_detail fill:#1a3a2a,color:#e6edf3
+    LMH --> DSPARK["DSpark 3层草稿 仅0731"]
+    FE["forward_embed<br/>真token+噪声x4 block_size=5 去噪"]
+    DSA["DSparkAttention<br/>wkv main_x 从主模型深层建KV<br/>layer 40,41,42 隐状态注入"]
+    FH["Markov bigram 头 rank=256<br/>confidence 自评头<br/>7草稿token"]
+    DSPARK --> FE --> DSA --> FH
+    style BLK fill:#1a2332,color:#e6edf3
+    style DSPARK fill:#1a3a2a,color:#e6edf3
 </div>
 </div>
 </div>
@@ -570,13 +548,13 @@ flowchart TD
 <div class="collapsible-content open">
 <div class="mermaid-wrapper">
 <div class="mermaid">
-flowchart LR
+graph LR
     NANO["nanoGPT 124M<br/>12x MHA+GELU 无cache"]
     MINI["MiniMind 64M<br/>8x GQA+SwiGLU 有cache"]
     QWEN["Qwen3.6 27B<br/>48 DeltaNet + 16 GQA"]
     GLM["GLM-5.2 753B<br/>MLA+DSA+IndexShare MoE"]
     KIMI["Kimi-K3 2.8T<br/>69 KDA + 24 MLA + AttnRes"]
-    DS["DeepSeek-V4 304B<br/>CSA/HCA + MQA + mHC + DSpark"]
+    DS["DeepSeek-V4 304B<br/>CSA HCA + MQA + mHC + DSpark"]
 </div>
 </div>
 </div>
@@ -642,13 +620,13 @@ flowchart LR
 <div class="collapsible-content open">
 <div class="mermaid-wrapper">
 <div class="mermaid">
-flowchart TD
+graph TD
     FB["Flash-Base 284B FP8"]
     FP["Flash Preview 284B 43层 无DSpark"]
     PB["Pro-Base 1.6T FP8"]
     PP["Pro Preview 1.6T 61层 无DSpark"]
     FD["Flash-DSpark 304B 43+3层"]
-    F0731["Flash-0731 304B config完全相同 agentic大幅提升"]
+    F0731["Flash-0731 304B<br/>config完全相同 agentic大幅提升"]
     FB --> FP
     PB --> PP
     FP --> FD
