@@ -1,0 +1,18 @@
+# 第三方克隆源码(他人的项目,不推送)
+nanoGPT/
+minimind/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
