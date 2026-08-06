@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>六模型架构深度对比 · Interactive Viewer</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--orange:#d29922;--red:#f85149;--purple:#bc8cff;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
+header{background:var(--card);border-bottom:1px solid var(--border);padding:20px 24px;position:sticky;top:0;z-index:100;backdrop-filter:blur(12px)}
+header h1{font-size:1.4rem;display:flex;align-items:center;gap:8px}
+header h1 .emoji{font-size:1.6rem}
+header .subtitle{color:var(--muted);font-size:.85rem;margin-top:4px}
+nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+nav button{padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;font-size:.85rem;transition:all .2s;white-space:nowrap}
+nav button:hover{border-color:var(--accent);color:var(--text)}
+nav button.active{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+main{max-width:1400px;margin:0 auto;padding:24px}
+.section{display:none;animation:fadeIn .3s}
+.section.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.model-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px}
+.model-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:16px}
+.model-title{font-size:1.3rem;font-weight:700}
+.model-badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{padding:3px 10px;border-radius:6px;font-size:.75rem;font-weight:600}
+.badge.blue{background:rgba(88,166,255,.15);color:var(--accent)}
+.badge.green{background:rgba(63,185,80,.15);color:var(--green)}
+.badge.orange{background:rgba(210,153,34,.15);color:var(--orange)}
+.badge.red{background:rgba(248,81,73,.15);color:var(--red)}
+.badge.purple{background:rgba(188,140,255,.15);color:var(--purple)}
+.param-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+.param-item{background:rgba(255,255,255,.03);border-radius:8px;padding:12px}
+.param-label{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.param-value{font-size:1.1rem;font-weight:700;margin-top:4px;color:var(--accent)}
+.mermaid-wrapper{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:8px;padding:20px;overflow-x:auto;margin:16px 0}
+.mermaid-wrapper .mermaid{display:flex;justify-content:center}
+.table-wrapper{overflow-x:auto;margin:16px 0;border-radius:8px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{background:var(--card);padding:12px 14px;text-align:left;font-weight:600;color:var(--muted);border-bottom:2px solid var(--border);position:sticky;top:0;white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+tr:hover td{background:rgba(88,166,255,.05)}
+td.highlight{color:var(--accent);font-weight:600}
+td.green{color:var(--green)}td.orange{color:var(--orange)}td.red{color:var(--red)}td.purple{color:var(--purple)}
+.collapsible{cursor:pointer;user-select:none;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;transition:all .2s}
+.collapsible:hover{border-color:var(--accent)}
+.collapsible .arrow{transition:transform .2s;color:var(--muted)}
+.collapsible.open .arrow{transform:rotate(90deg)}
+.collapsible-content{max-height:0;overflow:hidden;transition:max-height .3s ease}
+.collapsible-content.open{max-height:20000px}
+.compare-grid{display:grid;grid-template-columns:1fr;gap:16px}
+.info-box{background:rgba(88,166,255,.08);border-left:3px solid var(--accent);padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;font-size:.85rem}
+.info-box.warn{background:rgba(210,153,34,.08);border-left-color:var(--orange)}
+.footer{text-align:center;padding:32px;color:var(--muted);font-size:.8rem;border-top:1px solid var(--border);margin-top:40px}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.7rem;margin:2px}
+.tag-yes{background:rgba(63,185,80,.15);color:var(--green)}
+.tag-no{background:rgba(248,81,73,.1);color:var(--red);opacity:.6}
+@media(max-width:768px){.param-grid{grid-template-columns:repeat(2,1fr)}nav button{font-size:.75rem;padding:6px 10px}main{padding:12px}}
+</style>
+</head>
+<body>
+
+<header>
+<h1><span class="emoji">🧠</span> 六模型架构深度对比</h1>
+<div class="subtitle">nanoGPT · MiniMind · Qwen3.6 · GLM-5.2 · Kimi-K3 · DeepSeek-V4 · 访问日期 2026-08-01</div>
+<nav>
+<button class="active" onclick="showSection('overview')">📊 总览</button>
+<button onclick="showSection('nanogpt')">.nanoGPT</button>
+<button onclick="showSection('minimind')">🏠 MiniMind</button>
+<button onclick="showSection('qwen')">Q Qwen3.6</button>
+<button onclick="showSection('glm')">🔵 GLM-5.2</button>
+<button onclick="showSection('kimi')">🌙 Kimi-K3</button>
+<button onclick="showSection('deepseek')">🐋 DeepSeek-V4</button>
+<button onclick="showSection('compare')">⚖️ 横向对比</button>
+<button onclick="showSection('dsfamily')">🏗️ V4家族</button>
+</nav>
+</header>
+
+<main>
+
+<!-- ========== OVERVIEW ========== -->
+<div id="overview" class="section active">
+<div class="model-card">
+<div class="model-title">📊 六模型总览</div>
+<p style="color:var(--muted);margin:12px 0">点击上方标签查看每个模型的完整架构图与代码分析。所有结论标注 <span class="tag tag-yes">源码事实</span> <span class="tag tag-yes">官方材料</span> <span class="tag tag-yes">推导</span> <span class="tag tag-no">未知</span></p>
+<div class="table-wrapper">
+<table>
+<tr><th>模型</th><th>类型</th><th>参数量</th><th>激活参数</th><th>层数</th><th>hidden</th><th>注意力类型</th><th>FFN</th><th>位置编码</th><th>MTP</th><th>多模态</th><th>量化</th></tr>
+<tr><td class="highlight">nanoGPT</td><td>最小GPT教学</td><td>124M</td><td>124M</td><td>12</td><td>768</td><td>MHA</td><td>GELU MLP</td><td>绝对wpe</td><td class="red">无</td><td class="red">无</td><td>FP32</td></tr>
+<tr><td class="highlight">MiniMind</td><td>现代小模型教学</td><td>64M</td><td>64M</td><td>8</td><td>768</td><td>GQA(8Q/4KV)</td><td>SwiGLU</td><td>RoPE+YaRN</td><td class="red">无</td><td class="red">无</td><td>BF16</td></tr>
+<tr><td class="highlight">Qwen3.6-27B</td><td>官方Dense混合</td><td>27B</td><td>27B</td><td>64</td><td>5120</td><td class="purple">48 DeltaNet+16 GQA</td><td>SwiGLU+门控</td><td>MRoPE 3D</td><td class="green">MTP 1层</td><td class="green">ViT+视频</td><td>BF16</td></tr>
+<tr><td class="highlight">GLM-5.2</td><td>官方MoE</td><td>753B</td><td>~40B</td><td>78</td><td>6144</td><td class="blue">MLA+DSA+IndexShare</td><td>MoE 256E/8选</td><td>RoPE interleave</td><td class="green">MTP 1层</td><td class="red">无</td><td>BF16</td></tr>
+<tr><td class="highlight">Kimi-K3</td><td>官方MoE多模态</td><td>2.8T</td><td>104B</td><td>93</td><td>7168</td><td class="purple">69 KDA+24 Gated MLA</td><td>LatentMoE 896E/16选</td><td>MLA无RoPE</td><td class="red">无</td><td class="green">MoonViT+视频</td><td class="orange">原生MXFP4 QAT</td></tr>
+<tr><td class="highlight">DeepSeek-V4</td><td>官方MoE</td><td>304B</td><td>13B</td><td>43</td><td>4096</td><td class="blue">CSA/HCA+MQA+mHC</td><td>MoE 256E/6选 FP4</td><td>YaRN</td><td class="green">DSpark 3层</td><td class="red">无</td><td class="orange">FP4专家+FP8</td></tr>
+</table>
+</div>
+</div>
+
+<div class="model-card">
+<div class="model-title">🔗 注意力机制演进</div>
+<div class="info-box">从 nanoGPT 的 MHA 到前沿模型的 6 种变体,核心矛盾是 <strong>长上下文 KV cache 显存 vs 精确检索能力</strong></div>
+<div class="mermaid-wrapper">
+<div class="mermaid">
+graph TD
+    MHA["MHA<br/>nanoGPT<br/>Q=K=V头数<br/>cache: O(H·T·d)"]
+    GQA["GQA<br/>MiniMind<br/>KV头<Q头<br/>cache省50%"]
+    MQA["MQA<br/>DeepSeek-V4<br/>KV头=1<br/>cache省64×"]
+    MLA["MLA<br/>GLM-5.2/Kimi-K3<br/>KV低秩压缩<br/>cache省50×"]
+    LINEAR["线性注意力<br/>Qwen3.6/Kimi-K3<br/>递推状态恒定<br/>cache不随T增长"]
+    SPARSE["稀疏注意力<br/>GLM-5.2/DeepSeek-V4<br/>top-k选择key<br/>精确但需索引"]
+    MHA -->|"减少KV头"| GQA
+    GQA -->|"KV头=1"| MQA
+    MHA -->|"KV低秩压缩"| MLA
+    MHA -->|"状态递推替代"| LINEAR
+    MHA -->|"top-k选择key"| SPARSE
+    style MHA fill:#f85149,color:#fff
+    style LINEAR fill:#bc8cff,color:#fff
+    style SPARSE fill:#58a6ff,color:#fff
+</div>
+</div>
+</div>
+</div>
+
+<!-- ========== NANO GPT ========== -->
+<div id="nanogpt" class="section">
+<div class="model-card">
+<div class="model-header">
+<div class="model-title">. nanoGPT — 最小 GPT 实现</div>
+<div class="model-badges"><span class="badge">124M</span><span class="badge green">教学</span><span class="badge">MIT</span></div>
+</div>
+<div class="param-grid">
+<div class="param-item"><div class="param-label">层数</div><div class="param-value">12</div></div>
+<div class="param-item"><div class="param-label">hidden</div><div class="param-value">768</div></div>
+<div class="param-item"><div class="param-label">Q头/KV头</div><div class="param-value">12 / 12</div></div>
+<div class="param-item"><div class="param-label">head_dim</div><div class="param-value">64</div></div>
+<div class="param-item"><div class="param-label">词表</div><div class="param-value">50304</div></div>
+<div class="param-item"><div class="param-label">max_pos</div><div class="param-value">1024</div></div>
+</div>
+
+<div class="collapsible open" onclick="toggle(this)">📐 架构图 <span class="arrow">▶</span></div>
+<div class="collapsible-content open">
+<div class="mermaid-wrapper">
+<div class="mermaid">
+flowchart TB
+    IN["input_ids (B,T)"] --> WTE["wte: Embedding(V, d)"]
+    POS["pos: arange(T)"] --> WPE["wpe: Embedding(block_size, d)"]
+    WTE --> ADD["tok_emb + pos_emb (B,T,d)"]
+    WPE --> ADD --> DROP["Dropout"] --> BLK
+    subgraph BLK["Block × 12"]
+        LN1["ln_1: LayerNorm(d, bias)"] --> ATTN["CausalSelfAttention<br/>c_attn: Linear(d, 3d) 合并QKV<br/>SDPA(is_causal=True)<br/>c_proj: Linear(d,d)"]
+        ATTN --> RES1["+ 残差"] --> LN2["ln_2: LayerNorm"] --> MLP["MLP<br/>c_fc: d→4d →GELU→ c_proj: 4d→d"]
+        MLP --> RES2["+ 残差"]
+    end
+    BLK -->|"循环12次"| BLK
+    BLK --> LNF["ln_f: LayerNorm"] --> LH["lm_head: Linear(d,V) tied=wte"]
+    LH --> LOGITS["logits (B,T,V)"]
+    LOGITS -->|"训练"| CE["cross_entropy shift"]
+    LOGITS -->|"推理"| LAST["只取最后位置"]
+    style BLK fill:#1a2332,color:#e6edf3
+</div>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">🔧 关键设计 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>组件</th><th>nanoGPT 选择</th><th>行号</th><th>现代模型对比</th></tr>
+<tr><td>Norm</td><td>LayerNorm(带bias)</td><td>model.py:18</td><td>→ RMSNorm(无bias)</td></tr>
+<tr><td>位置编码</td><td>绝对可学习 wpe</td><td>model.py:128</td><td>→ RoPE(相对,可外推)</td></tr>
+<tr><td>Attention</td><td>MHA(c_attn合并QKV)</td><td>model.py:35</td><td>→ GQA/MLA/MQA</td></tr>
+<tr><td>FFN</td><td>2层 GELU(4×升维)</td><td>model.py:82</td><td>→ SwiGLU(3层门控)</td></tr>
+<tr><td>残差</td><td>Pre-LN</td><td>model.py:104</td><td>→ Pre-RMSNorm</td></tr>
+<tr><td>Weight Tying</td><td>wte=lm_head</td><td>model.py:138</td><td>部分模型不tie</td></tr>
+<tr><td class="red">KV Cache</td><td class="red">无</td><td>-</td><td>→ 有(past_key_value)</td></tr>
+<tr><td>优化器</td><td>AdamW fused + decay分组</td><td>model.py:263</td><td>→ 同(DeepSeek用Muon)</td></tr>
+<tr><td>MFU公式</td><td>6N + 12LHQT</td><td>model.py:296</td><td>同</td></tr>
+</table>
+</div>
+</div>
+
+<div class="info-box">nanoGPT 是理解所有现代 LLM 的 <strong>坐标系</strong>。它不能解释 KV cache/RoPE/GQA/MoE/长上下文,但它的"一批token到loss"闭环是所有创新的基线。</div>
+</div>
+</div>
+
+<!-- ========== MINIMIND ========== -->
+<div id="minimind" class="section">
+<div class="model-card">
+<div class="model-header">
+<div class="model-title">🏠 MiniMind — 现代小模型教学</div>
+<div class="model-badges"><span class="badge">64M</span><span class="badge green">对齐Qwen3</span><span class="badge">Apache-2.0</span></div>
+</div>
+<div class="param-grid">
+<div class="param-item"><div class="param-label">层数</div><div class="param-value">8</div></div>
+<div class="param-item"><div class="param-label">hidden</div><div class="param-value">768</div></div>
+<div class="param-item"><div class="param-label">Q头/KV头</div><div class="param-value">8 / 4 (GQA)</div></div>
+<div class="param-item"><div class="param-label">head_dim</div><div class="param-value">96</div></div>
+<div class="param-item"><div class="param-label">词表</div><div class="param-value">6400</div></div>
+<div class="param-item"><div class="param-label">max_pos</div><div class="param-value">32768</div></div>
+</div>
+
+<div class="collapsible open" onclick="toggle(this)">📐 架构图 <span class="arrow">▶</span></div>
+<div class="collapsible-content open">
+<div class="mermaid-wrapper">
+<div class="mermaid">
+flowchart TB
+    IN["input_ids (B,T)"] --> EMB["embed_tokens"]
+    EMB --> START["start_pos = past_kv[0][0].shape[1]<br/>从KV cache推断位置"]
+    START --> ROPE["freqs_cos/sin 切片"]
+    ROPE --> BLK
+    subgraph BLK["MiniMindBlock × 8"]
+        LN1["input_layernorm RMSNorm 无bias"] --> ATTN["Attention GQA+KV cache<br/>q_proj: 8头 / k,v_proj: 4头<br/>q_norm/k_norm RMSNorm<br/>RoPE → cat(past_kv) → repeat_kv → SDPA<br/>o_proj"]
+        ATTN --> RES1["+ 残差"] --> LN2["post_attention_layernorm"]
+        LN2 --> FFN["FeedForward SwiGLU<br/>down(silu(gate) × up)<br/>或 MoE: 4专家top-1+aux_loss"]
+        FFN --> RES2["+ 残差"]
+    end
+    BLK -->|"循环"| BLK
+    BLK --> NORM["norm RMSNorm"] --> LH["lm_head tied=embed"]
+    LH --> LOGITS["logits (B,T,V)"]
+    LOGITS -->|"训练"| SHIFT["shift: logits[:-1] vs labels[1:]"]
+    LOGITS -->|"推理"| GEN["generate()<br/>KV cache + temp + top_k + top_p<br/>+ repetition_penalty + EOS + streamer"]
+    style BLK fill:#1a2332,color:#e6edf3
+</div>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">🔧 与 nanoGPT 的 16 项升级 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>组件</th><th>nanoGPT</th><th>MiniMind</th><th>改进原因</th></tr>
+<tr><td>Norm</td><td>LayerNorm(bias)</td><td class="green">RMSNorm(无bias)</td><td>去mean省计算</td></tr>
+<tr><td>位置编码</td><td>绝对wpe</td><td class="green">RoPE+YaRN</td><td>可外推32768</td></tr>
+<tr><td>Attention</td><td>MHA</td><td class="green">GQA(8Q/4KV)</td><td>KV cache省50%</td></tr>
+<tr><td>QK-Norm</td><td>无</td><td class="green">RMSNorm(hd)</td><td>稳定attention分数</td></tr>
+<tr><td>KV Cache</td><td class="red">无</td><td class="green">有</td><td>推理O(1) decode</td></tr>
+<tr><td>FFN</td><td>2层GELU(4×)</td><td class="green">SwiGLU(3层,π×)</td><td>门控增强</td></tr>
+<tr><td>MoE</td><td>无</td><td class="green">可选 4E/top-1</td><td>容量扩展</td></tr>
+<tr><td>采样</td><td>temp+top-k</td><td class="green">+top-p+rep_penalty</td><td>精细控制</td></tr>
+<tr><td>EOS</td><td>无</td><td class="green">有(finished)</td><td>高效生成</td></tr>
+<tr><td>流式</td><td>无</td><td class="green">streamer</td><td>交互体验</td></tr>
+<tr><td>start_pos</td><td>无</td><td class="green">从past_kv推断</td><td>cache位置对齐</td></tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ========== QWEN3.6 ========== -->
+<div id="qwen" class="section">
+<div class="model-card">
+<div class="model-header">
+<div class="model-title">Q Qwen3.6-27B — Dense 混合注意力</div>
+<div class="model-badges"><span class="badge blue">27B</span><span class="badge purple">DeltaNet</span><span class="badge green">多模态</span></div>
+</div>
+<div class="param-grid">
+<div class="param-item"><div class="param-label">层数</div><div class="param-value">64</div></div>
+<div class="param-item"><div class="param-label">hidden</div><div class="param-value">5120</div></div>
+<div class="param-item"><div class="param-label">线性/全注意力</div><div class="param-value">48 / 16</div></div>
+<div class="param-item"><div class="param-label">Q头/KV头(全)</div><div class="param-value">24 / 4</div></div>
+<div class="param-item"><div class="param-label">词表</div><div class="param-value">248320</div></div>
+<div class="param-item"><div class="param-label">max_pos</div><div class="param-value">262K→1M</div></div>
+</div>
+
+<div class="collapsible open" onclick="toggle(this)">📐 架构图 <span class="arrow">▶</span></div>
+<div class="collapsible-content open">
+<div class="mermaid-wrapper">
+<div class="mermaid">
+flowchart TB
+    IDS["input_ids"] --> EMB["embed_tokens 5120"]
+    PIX["pixel_values"] --> VIT["ViT 27层 + PatchMerger"]
+    VIT --> MS["masked_scatter 注入"]
+    EMB --> MS
+    IDS --> GRI["get_rope_index<br/>MRoPE [11,11,10]=T,H,W"]
+    GRI --> ROT["interleaved RoPE<br/>cos/sin (B,L,64)"]
+    MS --> DEC
+    ROT --> DEC
+    subgraph DEC["64层 = 16组×(3线性+1全)"]
+        LIN["Gated DeltaNet ×48<br/>in_proj_qkv/z/b/a 四投影<br/>short conv k=4 SiLU<br/>delta rule: S=diag(g)S+β(v-Sk)k<br/>recurrent_state (48,128,128) 恒定!<br/>RMSNormGated: silu(z) 输出门"]
+        FULL["Gated GQA ×16<br/>q_proj翻倍出gate<br/>partial_rotary 0.25(64维)<br/>sigmoid(gate) 输出门<br/>KV cache (4头×256)"]
+        LIN --> MLP["SwiGLU 17408"]
+        FULL --> MLP
+    end
+    DEC --> NORM["RMSNorm"] --> LMH["lm_head →248320"]
+    LMH -.-> MTP["MTP 1层<br/>HF不实现,权重忽略<br/>vLLM/SGLang用"]
+    style LIN fill:#bc8cff,color:#fff
+    style FULL fill:#58a6ff,color:#fff
+</div>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">🔬 Gated DeltaNet 核心机制 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="info-box"><strong>解决问题</strong>:全注意力 KV cache 随序列线性增长,1M上下文显存爆炸。线性注意力用固定大小状态矩阵替代,KV cache <strong>恒定</strong>。</div>
+<div class="table-wrapper">
+<table>
+<tr><th>维度</th><th>MiniMind GQA</th><th>Qwen3.6 DeltaNet</th></tr>
+<tr><td>状态</td><td>KV cache 随T增长</td><td class="green">状态矩阵恒定 (48,128,128)</td></tr>
+<tr><td>计算复杂度</td><td>O(T²·d)</td><td class="green">O(T·d²) 递推</td></tr>
+<tr><td>长序列显存</td><td>O(T)</td><td class="green">O(1)</td></tr>
+<tr><td>精确检索</td><td class="green">高(精确attention)</td><td class="orange">略低(有损压缩)</td></tr>
+</table>
+</div>
+<p style="margin:12px 0"><strong>Delta rule 公式</strong> [源码事实 modeling:369-380]:</p>
+<div class="info-box">S_t = diag(g_t)·S_{t-1} + β_t·(v_t - S_{t-1}·k_t)·k_tᵀ<br>o_t = q_t · S_t<br><span style="color:var(--muted)">g = -exp(A_log)·softplus(a+dt_bias) Mamba2式衰减门; β = sigmoid(b) 写入门; (v-Sk) 是delta减法项实现定向覆盖</span></div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">🔬 两套输出门控 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>层类型</th><th>门控激活</th><th>实现</th><th>行号</th></tr>
+<tr><td class="purple">线性注意力(DeltaNet)</td><td class="purple">swish/silu</td><td>RMSNormGated: RMSNorm(o)·silu(z)</td><td>modeling:197,558</td></tr>
+<tr><td class="blue">全注意力(GQA)</td><td class="blue">sigmoid</td><td>attn_output · sigmoid(gate)</td><td>modeling:717</td></tr>
+</table>
+</div>
+<div class="info-box warn">⚠️ 命名易误读：<code>output_gate_type=swish</code> 描述的是<strong>线性注意力</strong>的门控，不是全注意力层。全注意力用 sigmoid（硬编码在 q_proj 翻倍中）。</div>
+</div>
+</div>
+</div>
+
+<!-- ========== GLM ========== -->
+<div id="glm" class="section">
+<div class="model-card">
+<div class="model-header">
+<div class="model-title">🔵 GLM-5.2 — MoE + MLA + DSA + IndexShare</div>
+<div class="model-badges"><span class="badge blue">753B</span><span class="badge orange">IndexShare原创</span><span class="badge">MIT</span></div>
+</div>
+<div class="param-grid">
+<div class="param-item"><div class="param-label">层数</div><div class="param-value">78 (3D+75MoE)</div></div>
+<div class="param-item"><div class="param-label">hidden</div><div class="param-value">6144</div></div>
+<div class="param-item"><div class="param-label">Q/KV压缩</div><div class="param-value">2048 / 512</div></div>
+<div class="param-item"><div class="param-label">专家/选/共享</div><div class="param-value">256 / 8 / 1</div></div>
+<div class="param-item"><div class="param-label">DSA top-k</div><div class="param-value">2048</div></div>
+<div class="param-item"><div class="param-label">max_pos</div><div class="param-value">1M</div></div>
+</div>
+
+<div class="collapsible open" onclick="toggle(this)">📐 架构图 <span class="arrow">▶</span></div>
+<div class="collapsible-content open">
+<div class="mermaid-wrapper">
+<div class="mermaid">
+flowchart TB
+    IN["input_ids"] --> EMB["embed 154880×6144"]
+    EMB --> ROPE["RoPE interleave theta=8e6 dim=64"]
+    ROPE --> DEC
+    subgraph DEC["78层"]
+        D3["3层 Dense: SwiGLU 12288"]
+        M75["75层 MoE: 256E/8选/1共享 sigmoid路由"]
+        D3 --> M75
+    end
+    subgraph ATT["MLA注意力 (每层)"]
+        QA["q_a_proj 6144→2048 压缩8.5×"] --> QB["q_b_proj 2048→16384 解压64头×256"]
+        QB --> QS["split: nope(192)+rope(64)"]
+        KVA["kv_a_proj 6144→576 压缩"] --> KVB["kv_b_proj 512→28672 解压"]
+        QS --> ATT2["attention"]
+        KVB --> ATT2
+    end
+    subgraph DSA["DSA Indexer + IndexShare"]
+        DF["full层(21个): 算索引<br/>ReLU(QKᵀ)打分→top-2048"]
+        DS["shared层(57个): 复用上层索引!<br/>indexer=None,省73%计算"]
+        DF --> DS
+    end
+    DEC --> NORM["RMSNorm"] --> LMH["lm_head→154880"]
+    LMH -.-> MTP["MTP 1层 + 索引复用"]
+    M75 -.-> ATT
+    ATT -.-> DSA
+    style DSA fill:#1a3a2a,color:#e6edf3
+    style ATT fill:#1a2332,color:#e6edf3
+</div>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">🔬 IndexShare:唯一原创贡献 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="info-box"><strong>解决问题</strong>:78层都跑 DSA Indexer,计算开销大。<br><strong>做法</strong>:<code>indexer_types</code> 数组控制——3层full + 之后每4层1个full + 3个shared。shared层 <code>self.indexer=None</code>,直接用 <code>prev_topk_indices</code>。</div>
+<div class="table-wrapper">
+<table>
+<tr><th>指标</th><th>无IndexShare</th><th>有IndexShare</th></tr>
+<tr><td>算索引的层</td><td>78/78 (100%)</td><td class="green">21/78 (27%)</td></tr>
+<tr><td>1M FLOPs</td><td>1×</td><td class="green">0.34× (↓2.9×)</td></tr>
+<tr><td>prefill(30B)</td><td>1×</td><td class="green">1.82× 加速</td></tr>
+<tr><td>decode(30B)</td><td>1×</td><td class="green">1.48× 加速</td></tr>
+</table>
+</div>
+<div class="info-box warn">⚠️ GLM-5.2 高度复用 DeepSeek-V3.2(modular 4处 MAIN DIFF 全部围绕 prev_topk_indices 传递)。MLA/DSA/MoE 均源自 DS-V3.2。<strong>唯一原创是 IndexShare</strong>。</div>
+</div>
+</div>
+</div>
+
+<!-- ========== KIMI ========== -->
+<div id="kimi" class="section">
+<div class="model-card">
+<div class="model-header">
+<div class="model-title">🌙 Kimi-K3 — 最激进组合</div>
+<div class="model-badges"><span class="badge purple">2.8T</span><span class="badge green">多模态</span><span class="badge orange">MXFP4 QAT</span></div>
+</div>
+<div class="param-grid">
+<div class="param-item"><div class="param-label">层数</div><div class="param-value">93</div></div>
+<div class="param-item"><div class="param-label">hidden</div><div class="param-value">7168</div></div>
+<div class="param-item"><div class="param-label">KDA/MLA</div><div class="param-value">69 / 24</div></div>
+<div class="param-item"><div class="param-label">专家/选/共享</div><div class="param-value">896 / 16 / 2</div></div>
+<div class="param-item"><div class="param-label">激活参数</div><div class="param-value">104B</div></div>
+<div class="param-item"><div class="param-label">max_pos</div><div class="param-value">1M</div></div>
+</div>
+
+<div class="collapsible open" onclick="toggle(this)">📐 架构图 <span class="arrow">▶</span></div>
+<div class="collapsible-content open">
+<div class="mermaid-wrapper">
+<div class="mermaid">
+flowchart TB
+    PIX["pixel_values"] --> VIT["MoonViT-V2<br/>Conv2d 14×14 + 3D PosEmb<br/>27层ViT + tpool + PatchMerger→7168"]
+    IDS["input_ids"] --> EMB["embed 163840×7168"]
+    VIT --> MERGE["占位token 163605替换"]
+    EMB --> MERGE
+    MERGE --> DEC
+    subgraph DEC["93层"]
+        L0["Layer0: Dense + KDA"]
+        KDA["69层 KDA+MoE<br/>q/k/v_proj + ShortConv k=4<br/>delta rule: S=diag(g)S+β(v-Sk)k<br/>safe_gate lower_bound=-5<br/>state(B,96,128,128)恒定!<br/>FusedRMSNormGated sigmoid"]
+        MLA["24层 Gated MLA+MoE<br/>Q LoRA 7168→1536→96×192<br/>KV LoRA 7168→576→96×256<br/>use_nope=true 无RoPE!<br/>use_output_gate=true sigmoid门"]
+        MOE["LatentMoE: 7168→3584潜空间<br/>896E sigmoid top-16 2共享<br/>SiTU-GLU β=4 有界激活"]
+        AR["AttnRes: 每12层block_residual<br/>RMSNorm+1D打分+softmax+加权<br/>attention前+MLP前各一次"]
+        L0 --> KDA
+        L0 --> MLA
+        KDA --> AR --> MOE
+        MLA --> AR
+    end
+    DEC --> NORM["AttnRes最终融合 + RMSNorm"] --> LMH["lm_head→163840"]
+    style KDA fill:#bc8cff,color:#fff
+    style MLA fill:#58a6ff,color:#fff
+    style MOE fill:#d29922,color:#000
+</div>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">🔬 五大独有机制 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>机制</th><th>解决问题</th><th>关键代码</th></tr>
+<tr><td class="purple">KDA(69层)</td><td>线性注意力 KV cache 恒定</td><td>recurrent_state (B,96,128,128) 不随T增长</td></tr>
+<tr><td class="blue">Gated MLA(24层)</td><td>全注意力 KV 压缩 + 精确检索</td><td>use_nope=true(无RoPE) + output_gate(sigmoid)</td></tr>
+<tr><td class="orange">AttnRes</td><td>93层深网信息退化</td><td>每12层跨块softmax加权残差(1D打分)</td></tr>
+<tr><td class="orange">LatentMoE</td><td>896专家显存爆炸</td><td>7168→3584潜空间+RMSNorm(Stable)+共享down/up</td></tr>
+<tr><td class="orange">SiTU-GLU</td><td>超大规模训练稳定</td><td>β·tanh(g/β)·σ(g) 有界±β=4</td></tr>
+</table>
+</div>
+<div class="info-box"><strong>1M KV cache 估算</strong>:69 KDA层状态恒定(217MB) + 24 MLA层潜变量(27.6GB) = <strong>~27.8GB</strong>。若全MHA则需 4.57TB,压缩 <strong>166×</strong>。</div>
+</div>
+</div>
+</div>
+
+<!-- ========== DEEPSEEK ========== -->
+<div id="deepseek" class="section">
+<div class="model-card">
+<div class="model-header">
+<div class="model-title">🐋 DeepSeek-V4-Flash-0731 — CSA/HCA + MQA + mHC + DSpark</div>
+<div class="model-badges"><span class="badge blue">304B</span><span class="badge orange">FP4</span><span class="badge green">DSpark</span></div>
+</div>
+<div class="param-grid">
+<div class="param-item"><div class="param-label">层数</div><div class="param-value">43+3 DSpark</div></div>
+<div class="param-item"><div class="param-label">hidden</div><div class="param-value">4096</div></div>
+<div class="param-item"><div class="param-label">KV头</div><div class="param-value">1 (MQA!)</div></div>
+<div class="param-item"><div class="param-label">专家/选/共享</div><div class="param-value">256 / 6 / 1</div></div>
+<div class="param-item"><div class="param-label">mHC副本</div><div class="param-value">4 + Sinkhorn</div></div>
+<div class="param-item"><div class="param-label">草稿token</div><div class="param-value">7 (DSpark)</div></div>
+</div>
+
+<div class="collapsible open" onclick="toggle(this)">📐 架构图 <span class="arrow">▶</span></div>
+<div class="collapsible-content open">
+<div class="mermaid-wrapper">
+<div class="mermaid">
+flowchart TD
+    IN["input_ids"] --> EMB["embed 129280×4096"]
+    EMB --> HC["HC展开 4副本 (b,s,4,4096)"]
+    HC --> BLK
+    subgraph BLK["43层 Block"]
+        HP1["hc_pre 4→1<br/>Sinkhorn 20轮双随机矩阵"] --> ATTN
+        ATTN["Attention MQA变体<br/>wq_a 4096→1024 Q压缩<br/>wkv 4096→512 单头MQA<br/>RoPE末64维<br/>sparse_attn: 滑窗128+CSA/HCA"]
+        ATTN --> HP1P["hc_post 1→4"]
+        HP1P --> HP2["hc_pre 4→1"] --> MOE
+        MOE["MoE<br/>sqrtsoftplus √ln(1+eˣ)<br/>top-6 noaux_tc<br/>FP4专家 swiglu_limit=10<br/>1共享(BF16)"]
+        MOE --> HP2P["hc_post 1→4"]
+    end
+    BLK --> HH["hc_head sigmoid 4→1"]
+    HH --> NORM["RMSNorm"] --> LMH["lm_head→129280"]
+    LMH -.-> DSPARK
+    subgraph DSPARK["DSpark 3层草稿 (仅0731)"]
+        FE["forward_embed<br/>[真token+噪声×4] block_size=5 去噪"]
+        DSA["DSparkAttention<br/>wkv(main_x) 从主模型深层建KV<br/>layer 40,41,42 隐状态注入"]
+        FH["Markov bigram 头 rank=256<br/>confidence 自评头<br/>7草稿token"]
+        FE --> DSA --> FH
+    end
+    style BLK fill:#1a2332,color:#e6edf3
+    style DSPARK fill:#1a3a2a,color:#e6edf3
+</div>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">🔬 六大独有机制 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>机制</th><th>关键参数</th><th>作用</th></tr>
+<tr><td class="blue">CSA(4×)+HCA(128×)</td><td>compress_ratios交替</td><td>多级压缩KV,1M仅需V3.2的10% KV</td></tr>
+<tr><td class="blue">MQA(num_kv=1)</td><td>wkv 4096→512单头</td><td>极致KV压缩,CSA/HCA弥补精度</td></tr>
+<tr><td class="orange">mHC(4副本)</td><td>Sinkhorn 20轮→双随机矩阵</td><td>Birkhoff流形约束防副本坍缩</td></tr>
+<tr><td class="green">DSpark(3层草稿)</td><td>block_size=5+Markov+confidence</td><td>7token推测解码,~3×加速</td></tr>
+<tr><td class="orange">sqrtsoftplus</td><td>√ln(1+eˣ)</td><td>非负不饱和,解耦专家打分</td></tr>
+<tr><td class="orange">FP4专家</td><td>e2m1+e8m0/32</td><td>MX标准,FP4→FP8转码跑张量核</td></tr>
+</table>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">🔬 DSpark 推测解码详解 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="info-box"><strong>与 EAGLE/MTP 的区别</strong>:DSpark 用 <strong>噪声块去噪</strong>([真token, 噪声×4] 自回归恢复),<strong>深层注入</strong>(layer 40-42 隐状态),<strong>Markov bigram 先验</strong>,<strong>confidence 自评验证</strong>。7 草稿 token,理论 ~3× 加速。</div>
+<div class="table-wrapper">
+<table>
+<tr><th>维度</th><th>EAGLE/MTP</th><th>DSpark</th></tr>
+<tr><td>草稿层数</td><td>1层</td><td class="green">3层(更深)</td></tr>
+<tr><td>特征注入</td><td>末层隐状态</td><td class="green">深层(layer40-42)</td></tr>
+<tr><td>先验</td><td>无</td><td class="green">Markov bigram</td></tr>
+<tr><td>起步</td><td>纯自回归</td><td class="green">噪声块去噪</td></tr>
+<tr><td>验证</td><td>主模型逐token</td><td class="green">confidence自评</td></tr>
+<tr><td>草稿数</td><td>2-5</td><td class="green">7</td></tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ========== COMPARE ========== -->
+<div id="compare" class="section">
+<div class="model-card">
+<div class="model-title">⚖️ 六模型横向对比</div>
+
+<div class="collapsible open" onclick="toggle(this)">📐 架构总览对比 <span class="arrow">▶</span></div>
+<div class="collapsible-content open">
+<div class="mermaid-wrapper">
+<div class="mermaid">
+flowchart LR
+    subgraph NANO["nanoGPT 124M"]
+        N["12×[MHA+GELU] 无cache"]
+    end
+    subgraph MINI["MiniMind 64M"]
+        M["8×[GQA+SwiGLU+MoE可选] 有cache"]
+    end
+    subgraph QWEN["Qwen3.6 27B"]
+        Q["48×[DeltaNet]+16×[GQA] 混合"]
+    end
+    subgraph GLM["GLM-5.2 753B"]
+        G["3Dense+75MoE MLA+DSA+IndexShare"]
+    end
+    subgraph KIMI["Kimi-K3 2.8T"]
+        K["69KDA+24MLA AttnRes+LatentMoE"]
+    end
+    subgraph DS["DeepSeek-V4 304B"]
+        D["43MoE CSA/HCA+MQA+mHC+DSpark"]
+    end
+</div>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">📋 注意力机制对比 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>维度</th><th>nanoGPT</th><th>MiniMind</th><th>Qwen3.6</th><th>GLM-5.2</th><th>Kimi-K3</th><th>DeepSeek-V4</th></tr>
+<tr><td>类型</td><td>MHA</td><td>GQA</td><td class="purple">混合:DeltaNet+GQA</td><td class="blue">MLA+DSA</td><td class="purple">混合:KDA+MLA</td><td class="blue">MQA+CSA/HCA</td></tr>
+<tr><td>全注意力占比</td><td>100%</td><td>100%</td><td>25%</td><td>100%稀疏</td><td>26%</td><td>100%稀疏</td></tr>
+<tr><td>线性注意力</td><td class="red">无</td><td class="red">无</td><td class="green">75% DeltaNet</td><td class="red">无</td><td class="green">74% KDA</td><td class="red">无</td></tr>
+<tr><td>Q头</td><td>12</td><td>8</td><td>24/16K</td><td>64</td><td>96</td><td>64</td></tr>
+<tr><td>KV头</td><td>12</td><td>4</td><td>4</td><td>64(潜变量)</td><td>96(潜变量)</td><td class="red">1(MQA!)</td></tr>
+<tr><td>KV cache/token/层</td><td>1536</td><td>768</td><td>2048或恒定</td><td>576(潜变量)</td><td>576(潜变量)</td><td>512(单头)</td></tr>
+<tr><td>1M cache总量</td><td>N/A</td><td>N/A</td><td>25MB+32.8GB</td><td>89.9GB</td><td class="green">217MB+27.6GB</td><td>44.1GB</td></tr>
+<tr><td>位置编码</td><td>绝对wpe</td><td>RoPE 1D</td><td>MRoPE 3D</td><td>RoPE interleave</td><td>MLA无RoPE</td><td>YaRN+compress</td></tr>
+<tr><td>输出门控</td><td class="red">无</td><td class="red">无</td><td class="green">sigmoid+silu双套</td><td class="red">无</td><td class="green">sigmoid(MLA)</td><td class="red">无</td></tr>
+</table>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">📋 MoE路由对比 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>维度</th><th>MiniMind</th><th>GLM-5.2</th><th>Kimi-K3</th><th>DeepSeek-V4</th></tr>
+<tr><td>专家数</td><td>4</td><td>256</td><td class="highlight">896</td><td>256</td></tr>
+<tr><td>top-k</td><td>1</td><td>8</td><td class="highlight">16</td><td>6</td></tr>
+<tr><td>共享专家</td><td>0</td><td>1</td><td class="highlight">2</td><td>1</td></tr>
+<tr><td>打分函数</td><td>softmax</td><td>sigmoid</td><td>sigmoid</td><td class="purple">sqrtsoftplus</td></tr>
+<tr><td>选择方法</td><td>直接topk</td><td>noaux_tc(bias=0)</td><td>noaux_tc+renorm</td><td>noaux_tc+bias</td></tr>
+<tr><td>负载均衡</td><td>aux_loss</td><td class="red">无(bias=0)</td><td class="red">无(renorm)</td><td class="red">无(bias)</td></tr>
+<tr><td>潜空间</td><td class="red">无</td><td class="red">无</td><td class="green">7168→3584</td><td class="red">无</td></tr>
+<tr><td>激活函数</td><td>SiLU</td><td>SiLU</td><td class="orange">SiTU-GLU(β=4有界)</td><td>SiLU+limit=10</td></tr>
+<tr><td>专家精度</td><td>BF16</td><td>BF16</td><td class="orange">MXFP4(QAT)</td><td class="orange">FP4</td></tr>
+</table>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">📋 残差/推测/多模态/量化对比 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>维度</th><th>nanoGPT</th><th>MiniMind</th><th>Qwen3.6</th><th>GLM-5.2</th><th>Kimi-K3</th><th>DeepSeek-V4</th></tr>
+<tr><td>残差</td><td>Pre-LN标准</td><td>Pre-RMSNorm</td><td>标准</td><td>标准</td><td class="orange">AttnRes(12层跨块)</td><td class="orange">mHC(4副本Sinkhorn)</td></tr>
+<tr><td>推测解码</td><td class="red">无</td><td class="red">无</td><td>MTP 1层</td><td>MTP 1层</td><td class="red">无</td><td class="green">DSpark 3层(7token)</td></tr>
+<tr><td>多模态</td><td class="red">无</td><td class="red">无</td><td class="green">ViT+视频</td><td class="red">无</td><td class="green">MoonViT+视频</td><td class="red">无</td></tr>
+<tr><td>量化</td><td>FP32</td><td>BF16</td><td>BF16</td><td>BF16</td><td class="orange">原生MXFP4 QAT</td><td class="orange">FP4专家+FP8</td></tr>
+</table>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">📐 MoE路由演进 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="mermaid-wrapper">
+<div class="mermaid">
+graph LR
+    subgraph MM["MiniMind"]
+        MM1["softmax"] --> MM2["top-1"] --> MM3["aux_loss"] --> MM4["4E BF16"]
+    end
+    subgraph GM["GLM-5.2"]
+        GM1["sigmoid"] --> GM2["noaux_tc bias=0"] --> GM3["L1×2.5"] --> GM4["256E/8选/1共享"]
+    end
+    subgraph KM["Kimi-K3"]
+        KM1["sigmoid"] --> KM2["noaux_tc renorm"] --> KM3["潜空间+norm"] --> KM4["896E/16选/2共享 MXFP4"]
+    end
+    subgraph DM["DeepSeek-V4"]
+        DM1["sqrtsoftplus"] --> DM2["noaux_tc bias"] --> DM3["limit=10"] --> DM4["256E/6选/1共享 FP4"]
+    end
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ========== DS FAMILY ========== -->
+<div id="dsfamily" class="section">
+<div class="model-card">
+<div class="model-title">🏗️ DeepSeek-V4 家族:Preview / DSpark / 0731 / Pro</div>
+<div class="info-box">0731 模型卡原文："substantially enhanced agentic capabilities"，但架构与 DSpark 版本<strong>完全相同</strong>。agentic 提升(DeepSWE 7.3→54.4)来自<strong>后训练</strong>而非架构变化。</div>
+
+<div class="collapsible open" onclick="toggle(this)">📐 家族谱系 <span class="arrow">▶</span></div>
+<div class="collapsible-content open">
+<div class="mermaid-wrapper">
+<div class="mermaid">
+graph TD
+    FB["Flash-Base<br/>284B FP8"] -->|"+FP4+后训练"| FP["Flash Preview<br/>284B 43层 无DSpark"]
+    PB["Pro-Base<br/>1.6T FP8"] -->|"+FP4+后训练"| PP["Pro Preview<br/>1.6T 61层 无DSpark"]
+    FP -->|"+3层DSpark模块~20B"| FD["Flash-DSpark<br/>304B 43+3层"]
+    FD -->|"同结构+增强后训练"| F0731["Flash-0731<br/>304B config完全相同<br/>agentic大幅提升"]
+    style F0731 fill:#3fb950,color:#000
+</div>
+</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">📋 config 逐项对比 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>参数</th><th>Flash Preview</th><th>Flash 0731/DSpark</th><th>Pro Preview</th></tr>
+<tr><td>总参数</td><td>284B</td><td class="green">304B(+DSpark)</td><td class="highlight">1.6T</td></tr>
+<tr><td>层数</td><td>43</td><td>43+3 DSpark</td><td class="highlight">61</td></tr>
+<tr><td>hidden</td><td>4096</td><td>4096</td><td class="highlight">7168</td></tr>
+<tr><td>Q头</td><td>64</td><td>64</td><td class="highlight">128</td></tr>
+<tr><td>专家数</td><td>256</td><td>256</td><td class="highlight">384</td></tr>
+<tr><td>moe_intermediate</td><td>2048</td><td>2048</td><td class="highlight">3072</td></tr>
+<tr><td>index_topk</td><td>512</td><td>512</td><td class="highlight">1024</td></tr>
+<tr><td>q_lora_rank</td><td>1024</td><td>1024</td><td class="highlight">1536</td></tr>
+<tr><td>o_groups</td><td>8</td><td>8</td><td class="highlight">16</td></tr>
+<tr><td>routed_scaling</td><td>1.5</td><td>1.5</td><td class="highlight">2.5</td></tr>
+<tr><td class="highlight">compress_ratios前2层</td><td>0,0(滑窗)</td><td>0,0(滑窗)</td><td class="purple">128,128(HCA!)</td></tr>
+<tr><td>compress_ratios长度</td><td>43</td><td class="green">46(+3 DSpark)</td><td>61</td></tr>
+<tr><td>DSpark</td><td class="red">无</td><td class="green">有(block=5,7草稿)</td><td class="red">无</td></tr>
+</table>
+</div>
+<div class="info-box warn">⚠️ Pro 前2层用 HCA(128×压缩)而非滑窗——与 Flash 完全不同。Pro 61层足够深,浅层不需精确局部注意力;Flash 仅43层,前2层保留滑窗保局部精度。</div>
+</div>
+
+<div class="collapsible" onclick="toggle(this)">📋 Benchmark:Preview vs 0731 <span class="arrow">▶</span></div>
+<div class="collapsible-content">
+<div class="table-wrapper">
+<table>
+<tr><th>Benchmark</th><th>Flash Preview</th><th>Flash 0731</th><th>提升</th></tr>
+<tr><td>DeepSWE</td><td>7.3</td><td class="green">54.4</td><td class="green">+644%</td></tr>
+<tr><td>Terminal Bench 2.1</td><td>61.8</td><td class="green">82.7</td><td>+34%</td></tr>
+<tr><td>NL2Repo</td><td>39.4</td><td class="green">54.2</td><td>+38%</td></tr>
+<tr><td>Agents Last Exam</td><td>15.8</td><td class="green">25.2</td><td>+59%</td></tr>
+<tr><td>Toolathlon</td><td>49.7</td><td class="green">70.3</td><td>+41%</td></tr>
+<tr><td>AutomationBench</td><td>10.8</td><td class="green">25.1</td><td>+132%</td></tr>
+</table>
+</div>
+<div class="info-box"><strong>结论</strong>:0731 的 agentic 大幅提升来自<strong>后训练</strong>(具体方法 [未知]),不是架构变化。DSpark 模块提供推理加速但不改变模型能力。</div>
+</div>
+</div>
+</div>
+
+</main>
+
+<div class="footer">
+六模型源码深度审计 · 基于 nanoGPT/MiniMind/Qwen3.6/GLM-5.2/Kimi-K3/DeepSeek-V4 真实源码<br>
+所有结论标注 [源码事实 文件:行号] · 访问日期 2026-08-01 · <a href="https://github.com/freedom-lwx/models-opencode" style="color:var(--accent)">GitHub</a>
+</div>
+
+<script>
+mermaid.initialize({startOnLoad:true,theme:'dark',flowchart:{curve:'basis',useMaxWidth:true}});
+function showSection(id){
+document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+document.getElementById(id).classList.add('active');
+event.target.classList.add('active');
+window.scrollTo({top:0,behavior:'smooth'});
+}
+function toggle(el){
+el.classList.toggle('open');
+el.nextElementSibling.classList.toggle('open');
+}
+</script>
+</body>
+</html>
