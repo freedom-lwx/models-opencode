@@ -103,7 +103,7 @@ td.green{color:var(--green)}td.orange{color:var(--orange)}td.red{color:var(--red
 <div class="mermaid-wrapper">
 <div class="mermaid">
 graph TD
-    MHA["MHA - nanoGPT<br/>Q=K=V头数<br/>cache: O(H*T*d)"]
+    MHA["MHA - nanoGPT<br/>Q=K=V头数<br/>cache: OH*T*d"]
     GQA["GQA - MiniMind<br/>KV头少于Q头<br/>cache省50%"]
     MQA["MQA - DeepSeek-V4<br/>KV头=1<br/>cache省64x"]
     MLA["MLA - GLM-5.2/Kimi-K3<br/>KV低秩压缩<br/>cache省50x"]
@@ -143,17 +143,17 @@ graph TD
 <div class="mermaid-wrapper">
 <div class="mermaid">
 flowchart TB
-    IN["input_ids (B,T)"]
-    WTE["wte: Embedding(V, d)"]
-    POS["pos: arange(T)"]
-    WPE["wpe: Embedding(block_size, d)"]
-    ADD["tok_emb + pos_emb (B,T,d)"]
+    IN["input_ids B,T"]
+    WTE["wte: EmbeddingV, d"]
+    POS["pos: arangeT"]
+    WPE["wpe: Embeddingblock_size, d"]
+    ADD["tok_emb + pos_emb B,T,d"]
     DROP["Dropout"]
     IN --> WTE --> ADD
     POS --> WPE --> ADD
     ADD --> DROP
     DROP --> BLK1["Block 1"]
-    subgraph blkdetail["Block 内部结构 (重复12次)"]
+    subgraph blkdetail["Block 内部结构 重复12次"]
         LN1["ln_1: LayerNorm"]
         ATTN["CausalSelfAttention<br/>c_attn: Linear d to 3d<br/>SDPA is_causal=True<br/>c_proj: Linear d to d"]
         R1["+ 残差"]
@@ -162,11 +162,10 @@ flowchart TB
         R2["+ 残差"]
         LN1 --> ATTN --> R1 --> LN2 --> MLP --> R2
     end
-    BLK1 --> blkdetail
     BLK1 --> BLK2["Block 2 ... Block 12"]
     BLK2 --> LNF["ln_f: LayerNorm"]
     LNF --> LH["lm_head: Linear d to V<br/>tied with wte"]
-    LH --> LOGITS["logits (B,T,V)"]
+    LH --> LOGITS["logits B,T,V"]
     LOGITS -->|"训练"| CE["cross_entropy shift"]
     LOGITS -->|"推理"| LAST["只取最后位置"]
 </div>
@@ -216,27 +215,26 @@ flowchart TB
 <div class="mermaid-wrapper">
 <div class="mermaid">
 flowchart TB
-    IN["input_ids (B,T)"]
+    IN["input_ids B,T"]
     EMB["embed_tokens"]
     START["start_pos = past_kv shape<br/>从KV cache推断位置"]
     ROPE["freqs_cos/sin 切片"]
     IN --> EMB --> START --> ROPE
     ROPE --> BLK1["Block 1"]
-    subgraph blkdetail["MiniMindBlock (重复8次)"]
+    subgraph blkdetail["MiniMindBlock 重复8次"]
         LN1["input_layernorm RMSNorm 无bias"]
-        ATTN["Attention GQA + KV cache<br/>q_proj: 8头 / k,v_proj: 4头<br/>q_norm/k_norm RMSNorm<br/>RoPE -> cat past_kv -> repeat_kv -> SDPA<br/>o_proj"]
+        ATTN["Attention GQA + KV cache<br/>q_proj: 8头 / k,v_proj: 4头<br/>q_norm/k_norm RMSNorm<br/>RoPE to cat past_kv to repeat_kv to SDPA<br/>o_proj"]
         R1["+ 残差"]
         LN2["post_attention_layernorm"]
-        FFN["FeedForward SwiGLU<br/>down silu gate * up<br/>或 MoE: 4专家 top-1 + aux_loss"]
+        FFN["FeedForward SwiGLU<br/>down silu gate x up<br/>或 MoE: 4专家 top-1 + aux_loss"]
         R2["+ 残差"]
         LN1 --> ATTN --> R1 --> LN2 --> FFN --> R2
     end
-    BLK1 --> blkdetail
     BLK1 --> BLKN["Block 2 ... Block 8"]
     BLKN --> NORM["norm RMSNorm"]
     NORM --> LH["lm_head tied=embed"]
-    LH --> LOGITS["logits (B,T,V)"]
-    LOGITS -->|"训练"| SHIFT["shift: logits[:-1] vs labels[1:]"]
+    LH --> LOGITS["logits B,T,V"]
+    LOGITS -->|"训练"| SHIFT["shift: logits shifted vs labels shifted"]
     LOGITS -->|"推理"| GEN["generate KV cache + temp + top_k + top_p<br/>+ repetition_penalty + EOS + streamer"]
 </div>
 </div>
@@ -394,8 +392,6 @@ flowchart TB
         DS["shared层 57个: 复用上层索引<br/>indexer=None 省73%计算"]
         DF --> DS
     end
-    M75 -.-> mla_detail
-    mla_detail -.-> dsa_detail
     M75 --> NORM["RMSNorm"]
     NORM --> LMH["lm_head to 154880"]
     LMH -.-> MTP["MTP 1层 + 索引复用"]
@@ -517,18 +513,15 @@ flowchart TD
         HP2P["hc_post 1 to 4"]
         HP1 --> ATTN --> HP1P --> HP2 --> MOE --> HP2P
     end
-    BLK -.-> blk_detail
     BLK --> HH["hc_head sigmoid 4 to 1"]
     HH --> NORM["RMSNorm"]
     NORM --> LMH["lm_head to 129280"]
-    LMH -.-> DSPARK
     subgraph dspark_detail["DSpark 3层草稿 仅0731"]
         FE["forward_embed<br/>真token+噪声x4 block_size=5 去噪"]
         DSA["DSparkAttention<br/>wkv main_x 从主模型深层建KV<br/>layer 40,41,42 隐状态注入"]
         FH["Markov bigram 头 rank=256<br/>confidence 自评头<br/>7草稿token"]
         FE --> DSA --> FH
     end
-    DSPARK -.-> dspark_detail
     style blk_detail fill:#1a2332,color:#e6edf3
     style dspark_detail fill:#1a3a2a,color:#e6edf3
 </div>
