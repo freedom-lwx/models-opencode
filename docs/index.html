@@ -38,6 +38,21 @@ td.h{color:var(--accent);font-weight:600}
 td.g{color:var(--green)}td.o{color:var(--orange)}td.r{color:var(--red)}td.p{color:var(--purple)}
 .ib{background:rgba(88,166,255,.08);border-left:3px solid var(--accent);padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;font-size:.85rem}
 .ib.w{background:rgba(210,153,34,.08);border-left-color:var(--orange)}
+.ib.g{background:rgba(63,185,80,.08);border-left-color:var(--green)}
+.algo{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin:16px 0}
+.acard{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.acard h4{font-size:.95rem;color:var(--accent);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.acard h4 .tag{font-size:.7rem;background:rgba(88,166,255,.15);color:var(--accent);padding:1px 6px;border-radius:4px;font-weight:500}
+.acard p{font-size:.82rem;color:var(--muted);line-height:1.65;margin:4px 0}
+.acard p strong{color:var(--text)}
+.acard .formula{background:rgba(255,255,255,.04);border-radius:6px;padding:8px 10px;font-family:ui-monospace,monospace;font-size:.78rem;color:var(--green);margin:6px 0;overflow-x:auto;white-space:nowrap}
+.vram{margin:16px 0;border-radius:10px;overflow:hidden;border:1px solid var(--border)}
+.vram h4{background:var(--card);padding:10px 16px;font-size:.95rem;color:var(--orange);border-bottom:1px solid var(--border)}
+.vram table{margin:0;font-size:.82rem}
+.vram th{background:rgba(210,153,34,.08)}
+.vram td.num{text-align:right;font-variant-numeric:tabular-nums}
+.vram tr.total td{background:rgba(88,166,255,.08);font-weight:700;color:var(--accent)}
+.vram .note{padding:8px 16px;font-size:.75rem;color:var(--muted);background:rgba(255,255,255,.02)}
 .col{cursor:pointer;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;transition:.2s}
 .col:hover{border-color:var(--accent)}
 .col .a{transition:transform .2s;color:var(--muted)}
@@ -177,6 +192,56 @@ flowchart TB
     class R1,R2 res
 </div></div>
 <div class="ib">这是理解所有现代 LLM 的<strong>坐标系</strong>。后续每个模型都可以看作"替换 nanoGPT 的某个组件"。<strong>无 KV Cache</strong>:每步重算全部K/V,O(N·T) 推理。<strong>无 RoPE</strong>:绝对 wpe 超过 block_size 越界。</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--green)">📐 算法原理与作用</h3>
+<div class="algo">
+<div class="acard"><h4>Token-Position 双 Embedding <span class="tag">表示层</span></h4>
+<p><strong>作用</strong>:把离散 token id 映射为连续向量;可学习位置嵌入为每个位置 0..1023 提供独立向量。</p>
+<p><strong>为什么</strong>:Transformer 本身无序,需要显式位置信号。绝对 wpe 简单但不可外推。</p>
+<div class="formula">x_t = W_tok[tok_t] + W_pos[t]  in R^d</div>
+</div>
+<div class="acard"><h4>Causal Self-Attention <span class="tag">MHA</span></h4>
+<p><strong>作用</strong>:每个位置通过 Q·Kᵀ 相关性加权聚合所有历史位置 V,下三角 mask 禁止看未来。</p>
+<p><strong>为什么</strong>:并行计算 T 个预测(shift),一次前向 T 个监督信号。</p>
+<div class="formula">Att(Q,K,V)=softmax(QKᵀ/√d_h + M_causal)·V</div>
+</div>
+<div class="acard"><h4>Pre-LN 残差块 <span class="tag">骨架</span></h4>
+<p><strong>作用</strong>:<code>x = x + Attn(LN(x))</code>, <code>x = x + MLP(LN(x))</code>。残差提供恒等通路,LN 稳梯度。</p>
+<p><strong>为什么</strong>:Pre-LN 比 Post-LN 梯度更稳,可训深。</p>
+</div>
+<div class="acard"><h4>GELU MLP <span class="tag">通道混合</span></h4>
+<p><strong>作用</strong>:d→4d 升维 → GELU 非线性 → 4d→d 降维。为注意力提供非线性变换容量。</p>
+<p><strong>为什么</strong>:4× 升维是 GPT-2 经验值;GELU 平滑优于 ReLU。</p>
+<div class="formula">MLP(x)=W₂·GELU(W₁x),  W₁∈R^{4d×d}</div>
+</div>
+<div class="acard"><h4>Shifted CE Loss <span class="tag">训练目标</span></h4>
+<p><strong>作用</strong>:输入 <code>x[i:i+T]</code>,标签 <code>x[i+1:i+1+T]</code>——位置 t 预测 t+1。T 个 CE 平均为标量 loss。</p>
+<div class="formula">L = -1/(BT) Σ log exp(l_{t,y_t}) / Σ_v exp(l_{t,v})</div>
+</div>
+<div class="acard"><h4>Weight Tying <span class="tag">参数共享</span></h4>
+<p><strong>作用</strong>:输入 embedding 与输出 lm_head 共享矩阵,省 V×d 参数并语义对齐。</p>
+<p><strong>为什么</strong>:V=50304 时省 38.6M 参数(占模型 30%)。</p>
+</div>
+</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--orange)">💾 显存消耗换算 (B=1, BF16 推理)</h3>
+<div class="vram"><h4>nanoGPT 124M 显存结构</h4><div class="tw"><table>
+<tr><th>组件</th><th>参数量</th><th>计算</th><th class="num">BF16 显存</th><th class="num">FP32 显存</th></tr>
+<tr><td class="h">wte (V=50304,d=768)</td><td>38.6M</td><td>50304×768</td><td class="num">77.3 MB</td><td class="num">154.6 MB</td></tr>
+<tr><td>wpe (T=1024,d=768)</td><td>0.8M</td><td>1024×768</td><td class="num">1.6 MB</td><td class="num">3.1 MB</td></tr>
+<tr><td>12×Attention QKV+O</td><td>28.3M</td><td>12×(3×768²+768²)</td><td class="num">56.6 MB</td><td class="num">113.2 MB</td></tr>
+<tr><td>12×MLP (c_fc+c_proj)</td><td>56.6M</td><td>12×2×768×3072</td><td class="num">113.2 MB</td><td class="num">226.4 MB</td></tr>
+<tr><td>24×LayerNorm (scale+bias)</td><td>~0.04M</td><td>24×768×2</td><td class="num">~0.1 MB</td><td class="num">~0.2 MB</td></tr>
+<tr><td>lm_head (=wte, tied)</td><td>0</td><td>共享 wte</td><td class="num">0</td><td class="num">0</td></tr>
+<tr class="total"><td colspan="3">权重总和 (124M 参数)</td><td class="num">~249 MB</td><td class="num">~498 MB</td></tr>
+</table></div>
+<div class="tw"><table>
+<tr><th>KV Cache (无, nanoGPT 不支持)</th><th>计算</th><th class="num">T=1024</th><th class="num">T=4096</th></tr>
+<tr><td class="h">理论 KV (若有 cache, BF16)</td><td>L×2×nh×hd×T×2B</td><td class="num">36 MB</td><td class="num">144 MB</td></tr>
+<tr><td>实际(nanoGPT 每步全前向)</td><td>重算全部 K/V,无节省</td><td class="num r" colspan="2">每步 O(T·d²) 计算</td></tr>
+</table></div>
+<div class="note">💡 训练时还要加上梯度(=权重大小)+ AdamW 优化器状态(FP32 m,v = 8×参数大小)+ 激活(B×T×d×L)。124M 模型训练总显存约 1.2-1.5 GB(B=12,T=1024,混合精度,含激活重算)。消费级显卡轻松容纳。</div>
+</div>
 </div>
 </div>
 
@@ -256,6 +321,66 @@ flowchart TB
     class R1,R2 res
 </div></div>
 <div class="ib"><strong>vs nanoGPT 16项升级</strong>: RMSNorm(去mean省计算) · RoPE+YaRN(相对位置可外推) · GQA(KV cache省50%) · QK-Norm(稳定分数) · KV Cache(推理O(1) decode) · SwiGLU(门控增强) · MoE可选 · top-p · rep_penalty · EOS提前停止 · streamer流式 · prefill/decode分离</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--green)">📐 算法原理与作用</h3>
+<div class="algo">
+<div class="acard"><h4>RMSNorm <span class="tag">归一化</span></h4>
+<p><strong>作用</strong>:仅用均方根归一化,省去 mean 计算和 bias。</p>
+<div class="formula">RMSNorm(x)= x / √(mean(x²)+ε) · γ</div>
+<p><strong>vs LayerNorm</strong>:少一次 reduce,数值稳定,LLM 标配。</p>
+</div>
+<div class="acard"><h4>RoPE 旋转位置编码 <span class="tag">位置</span></h4>
+<p><strong>作用</strong>:对 Q/K 按位置 m 做 2D 旋转,使 &lt;Q_m,K_n&gt; 只依赖相对位置 m-n。</p>
+<div class="formula">q'_m = R(m·θ)·q_m,  ⟨q'_m,k'_n⟩ = f(m-n)</div>
+<p><strong>vs wpe</strong>:可外推 + YaRN 频率拉伸支持 32K。</p>
+</div>
+<div class="acard"><h4>GQA 分组查询注意力 <span class="tag">注意力</span></h4>
+<p><strong>作用</strong>:Q 有 n_h 个头,K/V 只有 n_kv 个头(n_kv&lt;n_h),KV 头通过 repeat_kv 广播。</p>
+<div class="formula">KV cache ∝ n_kv  (vs n_h in MHA)</div>
+<p><strong>权衡</strong>:MiniMind 8Q/4KV 省 50% KV,精度几乎无损。</p>
+</div>
+<div class="acard"><h4>QK-Norm <span class="tag">稳定性</span></h4>
+<p><strong>作用</strong>:对每个 head 的 Q/K 单独做 RMSNorm 后再点积。</p>
+<p><strong>为什么</strong>:防止 logit 爆炸,深层训练稳定(Qwen3/Llama3 引入)。</p>
+</div>
+<div class="acard"><h4>SwiGLU FFN <span class="tag">通道混合</span></h4>
+<p><strong>作用</strong>:3 矩阵门控 FFN,SiLU(gate)·up 后 down。</p>
+<div class="formula">FFN(x)=W_d·(SiLU(W_g x) ⊙ W_u x)</div>
+<p><strong>d_ff≈8d/3≈2432</strong>:保持与 4×GELU 参数量相当。</p>
+</div>
+<div class="acard"><h4>KV Cache + prefill/decode <span class="tag">推理</span></h4>
+<p><strong>prefill</strong>:一次前向 T 个 token 建立 cache;<strong>decode</strong>:每步只传 1 个新 token,历史 K/V 拼到 cache 末尾。</p>
+<div class="formula">成本: prefill O(T²·d) + decode O(N·T·d)  vs 无 cache O(N²·T·d)</div>
+</div>
+<div class="acard"><h4>MoE 路由 (可选) <span class="tag">稀疏</span></h4>
+<p><strong>作用</strong>:gate(x) softmax 选 top-1 专家,只激活一个 FFN;aux_loss 鼓励负载均衡。</p>
+<div class="formula">y = E_i(x), i=argmax(softmax(W_g·x))</div>
+<p><strong> vs 前沿</strong>:教学版用 softmax+top1+aux;前沿用 sigmoid+noaux_tc+top-k。</p>
+</div>
+<div class="acard"><h4>采样策略 <span class="tag">解码</span></h4>
+<p><strong>temp</strong>(锐化/平滑) · <strong>top-k</strong>(截断) · <strong>top-p</strong>(nucleus,累积概率质量) · <strong>repetition penalty</strong>(已见 token 降权)。</p>
+</div>
+</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--orange)">💾 显存消耗换算 (B=1, BF16 推理)</h3>
+<div class="vram"><h4>MiniMind 64M 显存结构</h4><div class="tw"><table>
+<tr><th>组件</th><th>参数量</th><th>计算</th><th class="num">BF16 显存</th></tr>
+<tr><td class="h">embed_tokens (V=6400,d=768, tied)</td><td>4.9M</td><td>6400×768</td><td class="num">9.8 MB</td></tr>
+<tr><td>8×Attention (q/k/v/o_proj)</td><td>14.2M</td><td>8×d×(8·96+4·96+4·96+8·96)</td><td class="num">28.4 MB</td></tr>
+<tr><td>8×q_norm/k_norm (RMSNorm×2×96)</td><td>~0.01M</td><td>16×96</td><td class="num">~0.02 MB</td></tr>
+<tr><td>8×SwiGLU (gate/up/down, d_ff=2432)</td><td>44.8M</td><td>8×3×768×2432</td><td class="num">89.6 MB</td></tr>
+<tr><td>16×RMSNorm (input/post/final)</td><td>~0.01M</td><td>16×768</td><td class="num">0.02 MB</td></tr>
+<tr><td>lm_head (=embed, tied)</td><td>0</td><td>共享</td><td class="num">0</td></tr>
+<tr class="total"><td colspan="3">权重总和 (64M 参数)</td><td class="num">~128 MB</td></tr>
+</table></div>
+<div class="tw"><table>
+<tr><th>KV Cache (BF16)</th><th>计算</th><th class="num">T=4K</th><th class="num">T=32K</th></tr>
+<tr><td class="h">GQA 8层 / 4KV头 / hd=96</td><td>L×2×nkv×hd×T×2B</td><td class="num">48 MB</td><td class="num">384 MB</td></tr>
+<tr><td>RoPE 表 (precompute)</td><td>T×hd×2×4B(fp32)</td><td class="num">~3 MB</td><td class="num">~24 MB</td></tr>
+<tr class="total"><td colspan="2">总推理显存(权重+KV)</td><td class="num">~180 MB</td><td class="num">~540 MB</td></tr>
+</table></div>
+<div class="note">💡 训练时:权重 128MB + 梯度 128MB + AdamW(fp32 m,v) 512MB + 激活(B=8,T=1024 约 200-400MB)≈ 1-1.5GB。若启用 MoE(4专家):FFN 部分 ×4,权重约 +270MB,但每 token 仍只激活 1 个专家(算力不变)。</div>
+</div>
 </div>
 </div>
 
@@ -343,6 +468,57 @@ flowchart TB
     class VPE,VBLK,VPM vis
 </div></div>
 <div class="ib"><strong>核心矛盾</strong>: 全注意力 KV cache 随序列线性增长,1M上下文显存爆炸。线性注意力用恒定状态矩阵替代,但有损压缩。<strong>3:1混合</strong>是精度与显存的折中--75%线性压显存,25%全注意力保精确检索。<strong>Delta rule</strong> 的 (v-S·k) 减法项实现"定向覆盖"而非盲加,比朴素线性注意力更强。</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--green)">📐 算法原理与作用</h3>
+<div class="algo">
+<div class="acard"><h4>Gated DeltaNet 线性注意力 <span class="tag">核心创新</span></h4>
+<p><strong>问题</strong>:softmax attention 是 O(T²) 计算 + O(T) KV,长序列不可承受。</p>
+<p><strong>做法</strong>:把 K/V 聚合为固定大小状态矩阵 S ∈ R^{h×d_v×d_k},逐 token 递推更新。</p>
+<div class="formula">S_t = diag(g_t)·S_{t-1} + β_t·(v_t − S_{t-1}·k_t)·k_tᵀ<br>o_t = S_t · q_t</div>
+<p><strong>关键</strong>:<code>(v − S·k)</code> 是 delta rule 减法项——写入前先减去被检索的旧值,实现<strong>定向覆盖</strong>而非盲加。</p>
+</div>
+<div class="acard"><h4>Mamba2 式门控 <span class="tag">遗忘/写入门</span></h4>
+<p><strong>遗忘门 g</strong>:<code>g = -exp(A_log)·softplus(a+dt_bias)</code> 对角衰减,类 SSM 连续时间步长。</p>
+<p><strong>写入门 β</strong>:<code>β=sigmoid(b)</code> 控制新值写入强度。</p>
+<p><strong>short conv k=4</strong>:因果 1D 深度卷积提供 4-token 局部上下文,补偿线性注意力位置信息缺失。</p>
+</div>
+<div class="acard"><h4>Gated GQA 全注意力 <span class="tag">精确召回锚点</span></h4>
+<p>每 4 层中 1 层用标准 GQA(24Q/4KV)做精确检索,校正线性状态漂移。<strong>q_proj 翻倍</strong>出 gate,<code>attn_output × sigmoid(gate)</code> 作为输出门控增强选择。</p>
+<p>partial rotary = 0.25:只旋转前 64/256 维,后 192 维直通。</p>
+</div>
+<div class="acard"><h4>MRoPE 3D 位置编码 <span class="tag">多模态</span></h4>
+<p><code>[11,11,10]</code> 将 32 个旋转频率分给 (T,H,W) 三轴。文本三轴相同退化为 1D;图像/视频用 3D meshgrid 真 3D 位置。<code>interleaved</code> 模式按 [T,H,W,T,H,W...] 交错保频率连续。</p>
+</div>
+<div class="acard"><h4>MTP (Multi-Token Prediction) <span class="tag">训练+推测</span></h4>
+<p>1 层全注意力 draft,复用主模型 embed_tokens(无独立 embedding)。训练时预测 t+1,t+2;推理时作为 EAGLE 式 draft 产出 2 个候选,主模型验证。HF 不实现(忽略 <code>mtp.*</code> 权重),仅 vLLM/SGLang 消费。</p>
+</div>
+<div class="acard"><h4>双输出门控 <span class="tag">易混淆点</span></h4>
+<p><strong>全注意力</strong>:<code>output × sigmoid(gate)</code>(gate 来自翻倍的 q_proj)。</p>
+<p><strong>线性注意力</strong>:<code>RMSNorm(o) × silu(z)</code>(z 来自 in_proj_z,即 swish 门)。</p>
+<p>两套<strong>不同激活函数</strong>,命名误导。</p>
+</div>
+</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--orange)">💾 显存消耗换算 (B=1, BF16 推理)</h3>
+<div class="vram"><h4>Qwen3.6-27B 显存结构</h4><div class="tw"><table>
+<tr><th>组件</th><th>参数量</th><th>计算</th><th class="num">BF16 显存</th></tr>
+<tr><td class="h">embed_tokens (V=248320,d=5120, tied)</td><td>1.27B</td><td>248320×5120</td><td class="num">2.54 GB</td></tr>
+<tr><td>16×Gated GQA (q/k/v/o + q/k_norm)</td><td>1.68B</td><td>q翻倍 12288+k/v 1024+o 6144</td><td class="num">3.36 GB</td></tr>
+<tr><td>48×Gated DeltaNet (qkv/z/b/a + o)</td><td>5.56B</td><td>10240+6144+48+48+6144 per layer</td><td class="num">11.12 GB</td></tr>
+<tr><td>64×SwiGLU FFN (d_ff=17408)</td><td>17.11B</td><td>64×3×5120×17408</td><td class="num">34.22 GB</td></tr>
+<tr><td>Vision Encoder (27层 ViT)</td><td>~0.6B</td><td>PatchMerger+ViT</td><td class="num">~1.2 GB</td></tr>
+<tr><td>MTP 头 (1层)</td><td>~0.3B</td><td>全注意力+FFN</td><td class="num">~0.6 GB</td></tr>
+<tr><td>RMSNorm/其他</td><td>~0.05B</td><td>—</td><td class="num">~0.1 GB</td></tr>
+<tr class="total"><td colspan="3">权重总和 (~26.5B 参数)</td><td class="num">~53.1 GB</td></tr>
+</table></div>
+<div class="tw"><table>
+<tr><th>KV Cache (BF16)</th><th>计算</th><th class="num">T=32K</th><th class="num">T=128K</th><th class="num">T=1M</th></tr>
+<tr><td class="h">16 GQA 层 (2×4×256=2048/tok/layer)</td><td>16×2048×T×2B</td><td class="num">2.0 GB</td><td class="num">8.0 GB</td><td class="num">64.0 GB</td></tr>
+<tr><td>48 DeltaNet 恒定状态</td><td>48×48×128×128×2B</td><td class="num">72 MB</td><td class="num">72 MB</td><td class="num">72 MB</td></tr>
+<tr class="total"><td colspan="2">总 KV cache</td><td class="num">2.07 GB</td><td class="num">8.07 GB</td><td class="num">64.07 GB</td></tr>
+</table></div>
+<div class="note">💡 权重 53GB + KV 32K≈2GB,BF16 推理约 <strong>55GB</strong>(单卡 A100-80G 或 2×4090)。FP8 量化权重 ~27GB,KV cache FP8 减半,可在单卡 4090 上跑 32K 上下文。线性层状态 <strong>恒定不随 T 增长</strong>是 1M 长上下文的关键。若全 64 层都用 GQA,1M KV 将达 256GB(×4)。</div>
+</div>
 </div>
 </div>
 
@@ -445,6 +621,58 @@ flowchart TB
     class ISF,ISS special
 </div></div>
 <div class="ib w"><strong>唯一原创 = IndexShare</strong>:跨4层复用DSA索引。其余MLA/DSA/MoE均源自DeepSeek-V3.2。transformers实现<strong>不含MTP</strong>(权重被_keys_to_ignore忽略)、<strong>不支持flash-mla</strong>(KV cache存展开形式,显存开销大),完整推理需SGLang/vLLM。</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--green)">📐 算法原理与作用</h3>
+<div class="algo">
+<div class="acard"><h4>MLA 多头潜变量注意力 <span class="tag">KV压缩</span></h4>
+<p><strong>问题</strong>:MHA KV cache = L×2×H×d_h×T,78 层 64 头 256 维 ×1M token 不可承受。</p>
+<p><strong>做法</strong>:KV 投影到低秩潜变量 c_kv ∈ R^{512},KV cache 只存 512+64=576 维,解压时 <code>kv_b_proj</code> 广播到 64 头。</p>
+<div class="formula">c_kv = W_kva·x ∈ R^{576}   [512 latent + 64 rope]<br>K,V = W_kvb·RMSNorm(c_kv[:, :512])</div>
+<p>Q 同样压缩 q_lora=2048,再 q_b_proj 解压。压缩比 ~50×。</p>
+</div>
+<div class="acard"><h4>DSA Dynamic Sparse Attention <span class="tag">稀疏</span></h4>
+<p><strong>问题</strong>:即使 MLA 压缩了 KV,attention 计算仍是 O(T²)。</p>
+<p><strong>做法</strong>:轻量 Indexer(32 头 × 128 维)用 <code>ReLU(Q·Kᵀ)</code> 打分(非 softmax,产生稀疏非负分),<code>weights_proj</code> 跨 32 头加权求和,选 top-2048 个 key 做精确 attention。</p>
+<div class="formula">scores = ReLU(Q_idx · K_idxᵀ / √128)  ∈ R^{B,S,32,T}<br>idx = TopK(Σ_h w_h · scores_h, k=2048)</div>
+</div>
+<div class="acard"><h4>IndexShare 跨层索引复用 <span class="tag">原创</span></h4>
+<p><strong>问题</strong>:78 层都跑 Indexer 开销大。</p>
+<p><strong>做法</strong>:<code>indexer_types</code> 模式 = 前 3 层 full,之后每 4 层中 1 full + 3 shared。shared 层 <code>indexer=None</code>,直接复用 <code>prev_topk_indices</code>。</p>
+<p><strong>收益</strong>:57/78 = 73% 层免跑索引器,1M 上下文 per-token FLOPs ↓2.9×。需多层蒸馏训练对齐。</p>
+</div>
+<div class="acard"><h4>interleaved RoPE <span class="tag">位置</span></h4>
+<p>Q/K 拆 nope(192维,不旋转)+ rope(64维),只对 rope 切片施加旋转位置编码。<code>interleave=true</code>:按 (x0,x1),(x2,x3) 每对直接算,省一次 contiguous 拷贝(DeepSeek-V3.2 用 rotate_half 半切)。</p>
+</div>
+<div class="acard"><h4>sigmoid + noaux_tc 路由 <span class="tag">MoE</span></h4>
+<p>256 专家,sigmoid 独立打分(非 softmax 互斥竞争),top-8 选择,L1 归一化 ×2.5 缩放。GLM-5.2 实际 <code>bias=0, n_group=1</code> 退化为<strong>纯 sigmoid top-8</strong>(无辅助损失,无分组)。1 个共享专家恒开承载公共知识。</p>
+</div>
+<div class="acard"><h4>MTP + IndexShare 复用 <span class="tag">推测解码</span></h4>
+<p>1 层 MTP 头(权重在 model.layers.78),HF 不加载,SGLang/vLLM 用于推测解码。<code>index_share_for_mtp_iteration=true</code> 让 draft 迭代复用主模型的 DSA 索引,省额外索引计算。官方报告接受长度 +20%。</p>
+</div>
+</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--orange)">💾 显存消耗换算 (B=1, BF16 推理)</h3>
+<div class="vram"><h4>GLM-5.2 753B 显存结构</h4><div class="tw"><table>
+<tr><th>组件</th><th>参数量</th><th>计算</th><th class="num">BF16 显存</th></tr>
+<tr><td class="h">embed_tokens (V=154880,d=6144,不tied)</td><td>0.95B</td><td>154880×6144</td><td class="num">1.90 GB</td></tr>
+<tr><td>78×MLA (q/kv lora + q/kv b_proj + o + norm)</td><td>~12.9B</td><td>78×(~165M/层)</td><td class="num">25.8 GB</td></tr>
+<tr><td>78×DSA Indexer (wq_b/wk/weights_proj)</td><td>~2.5B</td><td>78×(~32M/层)</td><td class="num">5.0 GB</td></tr>
+<tr><td>3×Dense SwiGLU (d_ff=12288)</td><td>0.68B</td><td>3×3×6144×12288</td><td class="num">1.36 GB</td></tr>
+<tr><td>75×MoE 256专家 (d_moe=2048)</td><td>724.8B</td><td>75×256×3×6144×2048</td><td class="num">1449.6 GB</td></tr>
+<tr><td>75×MoE gate (256 logits)</td><td>0.12B</td><td>75×6144×256</td><td class="num">0.24 GB</td></tr>
+<tr><td>75×1 shared expert</td><td>2.83B</td><td>75×3×6144×2048</td><td class="num">5.67 GB</td></tr>
+<tr><td>lm_head (不tied, V=154880)</td><td>0.95B</td><td>6144×154880</td><td class="num">1.90 GB</td></tr>
+<tr><td>MTP 头 (1层)</td><td>~0.5B</td><td>1层 MLA+FFN</td><td class="num">1.0 GB</td></tr>
+<tr class="total"><td colspan="3">权重总和 (~746B 参数)</td><td class="num">~1492 GB</td></tr>
+</table></div>
+<div class="tw"><table>
+<tr><th>KV Cache (BF16, MLA latent)</th><th>计算</th><th class="num">T=128K</th><th class="num">T=1M</th></tr>
+<tr><td class="h">78层 × 576/token (512 latent + 64 rope)</td><td>78×576×T×2B</td><td class="num">10.97 GB</td><td class="num">87.75 GB</td></tr>
+<tr><td>DSA Indexer key cache (128/token, full层)</td><td>较小</td><td class="num">~0.2 GB</td><td class="num">~1.6 GB</td></tr>
+<tr class="total"><td colspan="2">总 KV cache</td><td class="num">~11.2 GB</td><td class="num">~89.4 GB</td></tr>
+</table></div>
+<div class="note">💡 BF16 权重 1.5TB,必须 TP=8(每卡 ~187GB)或 TP=16 NVL。<strong>每 token 只激活 8+1=9 个专家 ≈ 40B 参数</strong>,FLOPs 相当于 40B dense。FP8 量化权重可减半至 ~750GB(TP=4 每卡 188GB,刚好 H200 141G 需 TP=8)。<strong>注意</strong>:HF transformers 把 MLA KV 展开为 [B,64,T,256] 存储,1M KV 膨胀到 ~4.5TB;真实部署用 SGLang/vLLM 的 flash-mla 才存 576 维潜变量。</div>
+</div>
 </div>
 </div>
 
@@ -539,6 +767,70 @@ flowchart TB
     class VPE,VPOS,VBLK,TPOOL,PM vis
 </div></div>
 <div class="ib"><strong>1M KV cache</strong>: 69 KDA恒定(217MB) + 24 MLA潜变量(27.6GB) = <strong>~27.8GB</strong> · 若全MHA需4.57TB · 压缩<strong>166x</strong>。<strong>LatentMoE</strong>:896专家在3584维潜空间运算(非7168),省参数;SiTU-GLU的 <code>β·tanh(g/β)·σ(g)</code> 提供有界激活(±4),稳定超大模型训练。</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--green)">📐 算法原理与作用</h3>
+<div class="algo">
+<div class="acard"><h4>KDA Kimi Delta Attention <span class="tag">线性注意力</span></h4>
+<p><strong>69/93 层使用</strong>,与 Qwen3.6 Gated DeltaNet 同族。Q/K/V 经 ShortConv(k=4 SiLU)做局部上下文混合,L2 归一化后用 delta rule 递推。</p>
+<div class="formula">S_t = A·S_{t-1} + β_t·(v_t − A·S_{t-1}·k̃_t)⊗k̃_t<br>A = exp(-exp(A_log)),  β=σ(b_proj(x))</div>
+<p><strong>独有</strong>:<code>safe_gate lower_bound=-5</code> 对门 g 做 <code>max(g,-5)</code> 防止状态爆炸;<code>use_full_rank_gate</code> 输出门满秩投影(非低秩)。</p>
+</div>
+<div class="acard"><h4>Gated MLA (无 RoPE) <span class="tag">全注意力</span></h4>
+<p><strong>24/93 层</strong>,与 DeepSeek MLA 结构相同(Q LoRA 1536,KV LoRA 576),但两个关键差异:</p>
+<p>① <code>mla_use_nope=true</code>:<strong>不施加 RoPE</strong>(rotary_emb=None),位置信息由 KDA 层 short conv + delta 递归承担;</p>
+<p>② <code>mla_use_output_gate=true</code>:<code>attn_out × sigmoid(W_g·x)</code> 输出门控。</p>
+<p>无 RoPE 使 KV cache 只需存 512 维潜变量(无需 64 维 rope 部分)。</p>
+</div>
+<div class="acard"><h4>AttnRes 跨块残差 <span class="tag">深网稳定</span></h4>
+<p><strong>问题</strong>:93 层深网标准残差路径过长,梯度衰减。</p>
+<p><strong>做法</strong>:每 12 层把 prefix_sum 快照压入 <code>block_residual</code> 栈(最多 8 块),每层 attention 前/MLP 前用 <code>_apply_attn_res</code> 融合:RMSNorm → 1D 线性打分 → softmax → 加权求和。</p>
+<div class="formula">out = softmax(w·RMSNorm([B_1..B_n, prefix])) · [B_1..B_n, prefix]</div>
+<p>灵感来自 Qwen3-Next DenseBlocker。</p>
+</div>
+<div class="acard"><h4>Stable LatentMoE <span class="tag">稀疏 MoE</span></h4>
+<p><strong>896 专家 / top-16 / 2 共享</strong>。关键创新:专家不在 7168 维运算,而在 <strong>3584 维潜空间</strong>:</p>
+<div class="formula">y = W_up · RMSNorm_3584( Σ w_i · E_i(W_down · x) )<br>+ SharedExperts(x)</div>
+<p>down_proj/up_proj 由所有路由专家共享,专家权重减半;RMSNorm 稳定潜空间数值("Stable")。</p>
+</div>
+<div class="acard"><h4>SiTU-GLU 有界激活 <span class="tag">稳定性</span></h4>
+<div class="formula">SiTU(g,u) = β·tanh(g/β)·σ(g) · (β_lin·tanh(u/β_lin))<br>β=4, β_lin=25</div>
+<p><code>tanh(g/β)</code> 把 gate 限幅 ±4(防爆炸),σ(g) 保留门控语义,linear_beta=25 给 up 路宽松软截断。在 896 专家 + 93 层规模下提供训练稳定性。</p>
+</div>
+<div class="acard"><h4>原生 MXFP4 QAT <span class="tag">量化</span></h4>
+<p>OCP MX 微缩放标准:e2m1(4 位浮点)+ e8m0(每 32 元素 1 字节 scale)。<strong>量化感知训练</strong>(从 SFT 阶段开始),非训练后量化。跳过 self_attn/shared_experts/lm_head/vision 保高精度。</p>
+</div>
+<div class="acard"><h4>MoonViT-V2 视觉塔 <span class="tag">多模态</span></h4>
+<p>Conv2d 14×14 patch → 3D 位置编码(2D 可学习 + 1D time sincos)→ 27 层 ViT(2D RoPE,非因果)→ tpool(空间 2×2 concat + 时间 mean 池化)→ PatchMergerV2(4096→4096→7168)。占位 token 163605 替换注入。</p>
+</div>
+<div class="acard"><h4>无 MTP <span class="tag">推测解码</span></h4>
+<p>Kimi-K3 <code>num_nextn_predict_layers=0</code>,无内置投机解码。可能依赖外部 draft 模型或优化 kernel 而非架构级推测。</p>
+</div>
+</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--orange)">💾 显存消耗换算 (B=1, 原生 MXFP4)</h3>
+<div class="vram"><h4>Kimi-K3 2.8T 显存结构</h4><div class="tw"><table>
+<tr><th>组件</th><th>参数量</th><th>精度</th><th class="num">显存</th></tr>
+<tr><td class="h">embed_tokens (V=163840,d=7168)</td><td>1.17B</td><td>BF16</td><td class="num">2.35 GB</td></tr>
+<tr><td>69×KDA (q/k/v_proj + A_log + f_a/f_b + b_proj + g + o)</td><td>~30.6B</td><td>BF16</td><td class="num">61.2 GB</td></tr>
+<tr><td>24×Gated MLA (q/kv lora + o + gate)</td><td>~5.6B</td><td>BF16</td><td class="num">11.2 GB</td></tr>
+<tr><td>93×AttnRes (4组 Linear(7168→1) + RMSNorm)</td><td>~0.02B</td><td>BF16</td><td class="num">~0.04 GB</td></tr>
+<tr><td>93×LatentMoE down/up_proj (7168↔3584)</td><td>4.8B</td><td>BF16</td><td class="num">9.6 GB</td></tr>
+<tr><td>93×MoE gate (7168→896)</td><td>0.6B</td><td>BF16</td><td class="num">1.2 GB</td></tr>
+<tr><td>93×896 路由专家 (3×3584×3072)</td><td class="o">2752B</td><td class="o">MXFP4</td><td class="num o">~1514 GB</td></tr>
+<tr><td>93×2 shared experts (3×7168×3072×2)</td><td>12.3B</td><td>BF16</td><td class="num">24.6 GB</td></tr>
+<tr><td>MoonViT-V2 + PatchMerger</td><td>~1.5B</td><td>BF16</td><td class="num">3.0 GB</td></tr>
+<tr><td>lm_head (不tied)</td><td>1.17B</td><td>BF16</td><td class="num">2.35 GB</td></tr>
+<tr class="total"><td colspan="3">权重总和 (~2.81T 参数, MXFP4 专家)</td><td class="num">~1630 GB</td></tr>
+</table></div>
+<div class="tw"><table>
+<tr><th>KV Cache</th><th>计算</th><th class="num">T=128K</th><th class="num">T=1M</th></tr>
+<tr><td class="h">69 KDA 层 恒定 recurrent_state</td><td>69×96×128×128×2B</td><td class="num">207 MB</td><td class="num">207 MB</td></tr>
+<tr><td>KDA conv_state (3 × B×12288×3)</td><td>69×3×12288×3×2B</td><td class="num">~15 MB</td><td class="num">~15 MB</td></tr>
+<tr><td>24 MLA 层 (576/token, BF16)</td><td>24×576×T×2B</td><td class="num">3.38 GB</td><td class="num">27.0 GB</td></tr>
+<tr class="total"><td colspan="2">总 KV cache</td><td class="num">~3.6 GB</td><td class="num">~27.2 GB</td></tr>
+</table></div>
+<div class="note">💡 权重 ~1.6TB,需要 EP=8 节点(64 GPU)或更大规模部署。<strong>每 token 激活 16 路由 + 2 共享专家 ≈ 104B</strong>,但因专家在 3584 维潜空间运算,FLOPs 比在 7168 维更少。MXFP4 QAT 相比 BF16 省 75% 专家显存,且因训练时就量化,精度损失远小于 PTQ。<strong>1M KV cache 仅 27.2GB(六模型最低之一)</strong>:74% 层是恒定 KDA 状态,26% MLA 层也只存 576 维潜变量。PD 分离迁移成本最低。</div>
+</div>
 </div>
 </div>
 
@@ -635,6 +927,65 @@ flowchart TB
     class FE,DATT,MARKOV,CONF mtp
 </div></div>
 <div class="ib"><strong>1M上下文</strong>: 仅需V3.2的<strong>27% FLOPs / 10% KV</strong>。<strong>Flash vs Pro</strong>: hidden 4096 vs 7168, 层 43 vs 61, 专家 256 vs 384, 前2层 滑窗 vs HCA。<strong>DSpark vs EAGLE/MTP</strong>: 多了噪声块去噪 + 深层注入 + Markov先验 + confidence自评。</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--green)">📐 算法原理与作用</h3>
+<div class="algo">
+<div class="acard"><h4>CSA / HCA 稀疏压缩注意力 <span class="tag">核心</span></h4>
+<p><strong>问题</strong>:1M 上下文 softmax attention 不可承受。</p>
+<p><strong>CSA (4×)</strong>:门控池化 <code>softmax(w_gate·x)·(w_kv·x)</code> 把 4 个 token 压成 1(重叠窗),Indexer 用低秩 Q + Hadamard + FP4 仿真打分,从压缩 KV 中选 top-512。</p>
+<p><strong>HCA (128×)</strong>:非重叠大步池化,128 token 压成 1,attend 全部压缩位置(无需 Indexer)。</p>
+<p><code>compress_ratios = [0,0,(4,128)×20,4,0,0,0]</code>,前 2 层/末层用纯滑窗 128 保局部精度。</p>
+</div>
+<div class="acard"><h4>MQA 变体 (num_kv=1) <span class="tag">极致 KV 压缩</span></h4>
+<p><strong>64 个 Q 头共享 1 个 KV 头</strong>:<code>wkv: 4096→512</code>(单头),KV cache 只有标准 MHA 的 1/64。</p>
+<p>Q 侧仍低秩压缩 <code>wq_a: 4096→1024 → wq_b → 64×512</code>;O 投影用 <strong>分组低秩</strong>(o_groups=8,每组独立 1024 bottleneck)。</p>
+<p>RoPE 只作用于每头末 64 维,前 448 维无位置编码(且 FP8 仿真)。</p>
+</div>
+<div class="acard"><h4>mHC 流形约束超连接 <span class="tag">深网稳定</span></h4>
+<p><strong>问题</strong>:43 层深网单条残差路径长,梯度衰减。</p>
+<p><strong>做法</strong>:维护 <code>hc_mult=4</code> 份隐状态副本。每层 <code>hc_pre</code> 用 Sinkhorn 20 轮迭代把 <code>comb[4,4]</code> 归一为<strong>双随机矩阵</strong>(Birkhoff 多面体 = 置换矩阵的凸包),4→1 加权送入子层;<code>hc_post</code> 用 <code>post·x + comb·residual</code> 1→4 混合回残差。</p>
+<div class="formula">comb: 行列和均为1, Sinkhorn(Sᵀ,S)×20 iters</div>
+</div>
+<div class="acard"><h4>DSpark 推测解码 <span class="tag">仅 0731</span></h4>
+<p>3 层草稿,block_size=5:起始块 <code>[真token, 噪声×4]</code>,块内自回归去噪。<strong>深层注入</strong>:收集主模型 layer 40/41/42 隐状态拼接投影。<strong>Markov bigram 头</strong>(rank=256)提供可学习 bigram 先验偏置。<strong>Confidence 头</strong>自评每位置置信度用于验证。草稿 7 token,p=0.5 时理论 ~3× 加速。</p>
+</div>
+<div class="acard"><h4>sqrtsoftplus 路由 <span class="tag">MoE</span></h4>
+<div class="formula">score = √softplus(x) = √ln(1+eˣ)</div>
+<p>非负、不饱和(∼√x)、逐元素(解耦专家)后归一化。bias 仅影响 top-k 选择,不影响最终权重(noaux_tc)。<code>swiglu_limit=10</code> 对 SwiGLU 激活限幅,框在 FP4(max=6)/FP8(max=448)动态范围内。</p>
+</div>
+<div class="acard"><h4>FP4 (MXFP4) 专家 <span class="tag">量化</span></h4>
+<p>专家权重 e2m1(4位浮点 <code>{0,±0.5,±1,±1.5,±2,±3,±4,±6}</code>)+ e8m0 scale(每 32 元素 1 字节)。非专家权重 FP8 e4m3(block 128×128)。<code>fp4_gemm</code> 策略:FP4→FP8 转码后跑 FP8×FP8 张量核(6-bit offset,6×2⁶=384&lt;448 无损)。<code>convert.py</code> 提供 FP4→FP8 无损路径。</p>
+</div>
+<div class="acard"><h4>YaRN + compress_rope <span class="tag">长上下文</span></h4>
+<p>factor=16(65K→1M),beta_fast=32 / beta_slow=1 偏向外推保局部。压缩层用独立 <code>compress_rope_theta=160000</code>(压缩位置 <code>pos//ratio</code> 需更大相位间隔);纯滑窗层(ratio=0)关 YaRN 用基础 theta。</p>
+</div>
+<div class="acard"><h4>Preview → 0731 变化 <span class="tag">版本</span></h4>
+<p><strong>架构唯一变化</strong>:增加 DSpark(3 层草稿 + Markov + confidence,~20B)。主模型 43 层完全不变。agentic 大幅提升(DeepSWE 7.3→54.4)来自<strong>后训练,非架构</strong>。Flash vs Pro:hidden 4096 vs 7168,层 43 vs 61,专家 256 vs 384,前 2 层 滑窗 vs HCA。</p>
+</div>
+</div>
+
+<h3 style="margin:20px 0 10px;font-size:1.05rem;color:var(--orange)">💾 显存消耗换算 (FP8 主权重 + FP4 专家)</h3>
+<div class="vram"><h4>DeepSeek-V4-Flash-0731 304B 显存结构</h4><div class="tw"><table>
+<tr><th>组件</th><th>参数量</th><th>精度</th><th class="num">显存</th></tr>
+<tr><td class="h">ParallelEmbedding (V=129280,d=4096)</td><td>0.53B</td><td>FP8</td><td class="num">0.53 GB</td></tr>
+<tr><td>43×Attention (wq_a/wq_b/wkv/wo_a/wo_b/norm)</td><td>4.6B</td><td>FP8</td><td class="num">4.6 GB</td></tr>
+<tr><td>43×mHC (hc_fn 24×4×4096)</td><td>~0.02B</td><td>BF16</td><td class="num">0.04 GB</td></tr>
+<tr><td>43×MoE gate (sqrtsoftplus + bias)</td><td>~0.05B</td><td>BF16</td><td class="num">0.1 GB</td></tr>
+<tr><td>43×1 shared expert (3×4096×2048, BF16)</td><td>1.08B</td><td>BF16</td><td class="num">2.16 GB</td></tr>
+<tr><td>43×256 路由专家 (3×4096×2048)</td><td class="o">277B</td><td class="o">FP4</td><td class="num o">~152 GB</td></tr>
+<tr><td>lm_head + final norm</td><td>0.53B</td><td>FP8</td><td class="num">0.53 GB</td></tr>
+<tr><td>DSpark 3 层草稿块(含 Markov/confidence)</td><td>~20B</td><td>BF16</td><td class="num">~40 GB</td></tr>
+<tr class="total"><td colspan="3">权重总和 (~304B 参数)</td><td class="num">~200 GB</td></tr>
+</table></div>
+<div class="tw"><table>
+<tr><th>KV Cache (MQA 单头 512, FP8=1B)</th><th>计算</th><th class="num">T=128K</th><th class="num">T=1M</th></tr>
+<tr><td class="h">43层 × 512/token × 1 byte(FP8)</td><td>43×512×T×1B</td><td class="num">2.69 GB</td><td class="num">21.5 GB</td></tr>
+<tr><td>CSA/HCA 压缩 KV(已含在上面)</td><td>分层 ratio</td><td class="num">—</td><td class="num">—</td></tr>
+<tr><td>DSpark 主模型深层 KV(独立草稿 cache)</td><td>较小</td><td class="num">~0.5 GB</td><td class="num">~2 GB</td></tr>
+<tr class="total"><td colspan="2">总 KV cache</td><td class="num">~3.2 GB</td><td class="num">~23.5 GB</td></tr>
+</table></div>
+<div class="note">💡 权重 ~200GB(FP8 主 + FP4 专家 + DSpark BF16),单节点 8×H200(141GB×8=1.1TB) 轻松容纳;实际生产部署 TP=8 + EP=2 每卡 ~25GB 权重。DSpark 的 40GB BF16 草稿可放独立 draft GPU。<strong>每 token 激活参数仅 ~13B</strong>(6 路由专家+1共享+attention+mHC)。<strong>FP4 节省</strong>:相比 BF16 专家部分省 75% 显存,decode 带宽减半,反量化转码开销约 5-10% 但净收益为正。</div>
+</div>
 </div>
 </div>
 
