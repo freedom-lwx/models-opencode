@@ -1,0 +1,14 @@
+{
+  "name": "transformer-visual-course",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check docs/assets/model-data.js && node --check docs/assets/calculators.js && node --check docs/assets/course.js && node scripts/check-site.mjs",
+    "verify": "npm test && npm run check"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
