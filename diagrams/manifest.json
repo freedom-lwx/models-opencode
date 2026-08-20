@@ -1,7 +1,7 @@
 {
   "renderer": {
-    "mermaidCli": "--check",
-    "svgo": "unknown"
+    "mermaidCli": "11.16.0",
+    "svgo": "4.0.2"
   },
   "files": [
     {
