@@ -44,9 +44,28 @@
 
 以上行为均增加了静态回归测试。
 
+## 图谱恢复追加验收
+
+[实验结果] 在恢复 6 张模型结构图与 6 张工程图后重新执行专项矩阵：
+
+- 12/12 SVG 实际解码成功；全部为同源请求，console error、pageerror、第三方 origin 均为 0。
+- 1440px 与 320px 页面级横向溢出均为 0；320px 的复杂图滚动区为 302px viewport / 760px content，聚焦后按右方向键可滚动。
+- `#model-kimi` 与 `#systems` 深链正确映射到顶部导航。
+- 禁用 JavaScript 后仍存在 12 张图、12 份 HTML 文字数据流，模型正文可见，增强控件保持禁用。
+- Axe：亮色桌面 0 violation；暗色移动端 0 violation。
+- 截图人工检查发现 Mermaid 11 的 path 型 subgraph 未继承 cluster rect 主题，曾出现白色大块；已在离线渲染阶段修复并增加静态门禁。
+- Axe 曾发现亮色工程说明中的 source badge 对比度为 4.09:1；亮色 accent 收深后为 5.16:1，复测 0 violation。
+
+图谱恢复后的 Lighthouse lab data：
+
+| 模式 | Performance | Accessibility | Best Practices | SEO | FCP | LCP | TBT | CLS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Mobile | 100 | 100 | 100 | 100 | 1.283 s | 1.659 s | 0 ms | 0.00122 |
+| Desktop | 100 | 100 | 100 | 100 | 0.344 s | 0.364 s | 0 ms | 0.00013 |
+
 ## 残余边界
 
 - 未在 Safari/Firefox 上执行相同自动化矩阵。
 - 未做 NVDA/VoiceOver 人工读屏；Axe 与语义检查不能替代真实辅助技术用户测试。
-- 未部署，因此没有 GitHub Pages 线上网络、缓存或真实用户 Core Web Vitals 数据。
+- 图谱恢复改动当前仅在本地完成，尚未 push/deploy；即使部署后，本地 Lighthouse 也不等于 GitHub Pages 真实用户 Core Web Vitals 数据。
 - 未做真实 GPU 性能基准。

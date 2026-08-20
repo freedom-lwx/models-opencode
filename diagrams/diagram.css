@@ -1,0 +1,4 @@
+.cluster path { fill: #111821 !important; stroke: #50657a !important; }
+.cluster-label text { fill: #f4f7fa !important; }
+.edgeLabels .background { fill: #111821 !important; opacity: .96 !important; }
+.edgeLabel text { fill: #f4f7fa !important; }

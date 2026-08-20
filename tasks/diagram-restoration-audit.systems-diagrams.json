@@ -1,0 +1,292 @@
+## Review
+
+- **结论**：六张工程图都应恢复，但旧图不能原样回填。旧版把源码路径、运行时部署假设、网络延迟和显存推导混在同一层，至少有 6 项严重错误。
+- **Correct**：当前计算层已经建立了正确边界：
+  - 通信按 `B × T × hidden × top-k × dtype × remote-route fraction` 计算单向远端 payload，并明确不包含协议、竞争和 collective 算法开销：`docs/assets/calculators.js:212-240`。
+  - Qwen、GLM、Kimi、DeepSeek 的 cache reference/optimized/deployment 口径已经分离：`docs/assets/calculators.js:106-181`。
+- **Blocker**：旧版 GLM 图把跨层 IndexShare 画成 GPU broadcast，但 reference 源码只是 Python 层循环传递 `topk_indices`，没有分布式广播：`research/glm-5.2/modeling_glm_moe_dsa.py:732-741`。
+- **Blocker**：旧版 DeepSeek 图把专家通信画成 AllToAll；本仓库官方 inference reference 实际把专家分片后执行 `dist.all_reduce(y)`：`research/deepseek-v4/model.py:615-648`。
+- **Blocker**：旧版 PD 图中的 Qwen 32.8GB、GLM 90GB、Kimi 27.8GB 均混淆或遗漏状态，不能作为当前 reference 精确总量。
+- **Note**：旧图中所有 NVLink/IB 延迟、固定 GPU 拓扑和“最快”结论都没有本地 benchmark 证据，只能降级为带参数的部署示意。
+
+## 1. 必须恢复的工程图
+
+| 图 | 恢复优先级 | 恢复目的 |
+|---|---:|---|
+| 总体集群/并行边界图 | P0 | 解释 TP、EP、PP/PD 分离分别在哪个边界发生 |
+| GLM-5.2 TP/EP 图 | P0 | 展示 MLA、DSA/IndexShare、MoE top-8 和 shared expert |
+| Kimi-K3 TP/EP 图 | P0 | 展示 KDA/MLA 混合、AttnRes、LatentMoE 3584 维路径 |
+| DeepSeek-V4 TP/专家分片图 | P0 | 展示 MQA、压缩注意力、Indexer reduction、reference expert all-reduce |
+| Qwen3.6 TP 图 | P0 | 展示 48 linear + 16 full、状态与 TP plan |
+| PD 分离/cache 迁移图 | P0 | 对比 reference、optimized、deployment subtotal，禁止混成单一精确值 |
+
+## 2. 旧图必须删除或降级的结论
+
+### P0：错误结论
+
+1. **GLM IndexShare 是跨 GPU broadcast**
+   - 旧图：`d21bf79:docs/index.html:1083-1146`
+   - 实际：full 层产生 `topk_indices`，下一 shared 层通过函数参数复用；reference 没有 broadcast：`research/glm-5.2/modeling_glm_moe_dsa.py:422-451`、`:732-741`。
+   - 修正：标为“层间张量复用”；只有特定 runtime 把相关层切到不同 rank 时，才可能需要通信。
+
+2. **GLM MoE 每次通信量为 `B×S×6144 bytes`**
+   - 配置为 top-8：`configs/glm-5.2-config.json:195-200`。
+   - 正确单向 routed payload 下限应是：
+     `B × S × 6144 × 8 × activation_bytes × remote_fraction`
+   - dispatch 和 combine 分开标注；不能把 top-k 和远端路由比例省略。
+
+3. **DeepSeek 专家通信是 AllToAll**
+   - 官方 inference reference 按 rank 持有专家，最终用 `dist.all_reduce(y)` 合并：`research/deepseek-v4/model.py:615-648`。
+   - 修正：主图画“reference: expert-sharded + all-reduce”；另用虚线画“EP runtime 可采用 dispatch/combine AllToAll”，标签必须是部署假设。
+
+4. **Qwen recurrent state 总量约 25MB**
+   - recurrent state 规格是 48 层、48 个 value heads、128×128、FP32：`docs/assets/model-data.js:37-45`。
+   - B=1 时仅 recurrent state 已约：
+     `48 × 48 × 128 × 128 × 4 = 150,994,944 bytes`
+   - 还未包含 BF16 convolution state。因此 25MB 明显错误。
+
+5. **Kimi KDA 状态为精确 217MB**
+   - reference 保存 recurrent state 和三组 convolution state：`research/kimi-k3/modeling_kimi_linear.py:572-649`。
+   - 本地证据不能固定外部 FLA recurrent state 的精确 dtype/layout；当前数据层已明确列为未计项：`docs/assets/model-data.js:75-84`。
+   - 修正：只能显示“恒定状态，精确字节未知”。
+
+6. **PD 图把 optimized subtotal 当 reference 总量**
+   - GLM：
+     - reference 1M BF16：约 5.117TB；
+     - optimized latent：约 95.232GB。
+   - Kimi：
+     - reference expanded MLA：约 1.475TB，且 KDA 未计；
+     - optimized 512+64：约 27.648GB，且 KDA 未计。
+   - Qwen reference：约 65.691GB，已含 full KV、FP32 recurrent、conv state。
+   - DeepSeek：
+     - reference：约 6.898GB；
+     - mixed deployment raw subtotal：约 3.119GB，量化 metadata 未计。
+   - 证据口径：`docs/assets/calculators.js:106-181`。
+
+### P1：无证据或误导性结论
+
+- “NVLink 约 5µs”“AllToAll 约 20µs/50µs”“IB 400GB/s 下约 1 秒”等均没有实验或具体拓扑证据。
+- `GB/s` 与 `Gb/s` 必须分开；当前计算器已按 8 倍换算：`docs/assets/calculators.js:225-240`。
+- “FP4 专家权重使激活通信减半”错误。权重量化不会自动改变 routed activation dtype。
+- “KDA/DeltaNet 每 GPU 独立，因此没有通信”过度概括；状态是否分片/复制取决于 runtime TP plan。
+- “DSpark 可独立 draft GPU，只传 7 个 logits、无需 KV”没有源码依据。7 是官方 vLLM 示例的 speculative token 数，不是通信协议：`docs/assets/model-data.js:96-110`。
+- GLM 训练梯度通信使用“773B/2≈386GB”同时存在参数量错误和 collective 流量模型错误；GLM config/当前规格为 753B。训练 DP 图应与推理图完全分开。
+
+## 3. 修正后的逐图规格
+
+### 3.1 总体集群图
+
+**节点**
+
+1. Request / tokenizer
+2. Prefill pool
+3. Cache/state transfer boundary
+4. Decode pool
+5. TP group
+6. Expert-shard/EP group
+7. Network boundary
+8. Evidence legend
+
+**连线**
+
+- Request → Prefill：token IDs
+- Prefill → Decode：明确写“cache/state components”，不能只写 KV
+- TP rank ↔ TP rank：collective，具体类型由模型/runtime 决定
+- Router → remote expert → combine：只在 EP deployment 假设层出现
+- Training DP 单独放在另一张图或隐藏附录，不与 inference 混画
+
+**标注**
+
+- `[源码事实]`、`[配置值]`、`[推导]`、`[部署假设]`
+- 不固定 GPU 型号、NVLink/IB 带宽和延迟
+- 通信量统一标成公式输入，而非无条件数字
+
+### 3.2 GLM-5.2
+
+**节点**
+
+- hidden `(B,S,6144)`
+- MLA Q LoRA 2048
+- KV latent 512 + RoPE 64
+- reference expanded K/V：64 heads × 256
+- DSA Indexer：21 个 full indexer、128 dim
+- shared DSA layer
+- MoE router：256 experts、top-8
+- shared expert：1
+- residual output
+
+**连线**
+
+- full Indexer → `topk_indices` → 后续 shared layer
+- 不画 GPU broadcast 实线
+- Router → routed experts → weighted combine
+- shared expert 与 routed output 相加
+
+**通信标注**
+
+- Reference HF：无分布式通信实现，所有 collective 均属 deployment。
+- EP one-way payload：
+  `B×S×6144×8×activation_bytes×remote_fraction`
+- reference expanded cache 与 optimized 576 latent 并排展示，禁止合并。
+
+**证据**
+
+- `configs/glm-5.2-config.json:195-222`
+- `research/glm-5.2/modeling_glm_moe_dsa.py:376-377`
+- `research/glm-5.2/modeling_glm_moe_dsa.py:422-451`
+- `research/glm-5.2/modeling_glm_moe_dsa.py:732-741`
+
+### 3.3 Kimi-K3
+
+**节点**
+
+- hidden `(B,S,7168)`
+- 69 KDA layers
+- recurrent state + q/k/v conv states
+- 24 Gated MLA layers
+- AttnRes，block size 12
+- router：896 experts、top-16
+- down projection `7168→3584`
+- latent routed experts
+- up projection `3584→7168`
+- 2 shared experts
+
+**连线**
+
+- Router 在 7168 hidden 上计算选择。
+- routed hidden 在 reference 中先 down-project 到 3584，再进入 `moe_infer`。
+- 因此只有 runtime 确实在 down projection 后做 EP dispatch 时，才可把网络 payload 标成 3584 维。
+- shared expert 走原始 7168 identity 分支。
+
+**通信标注**
+
+- 当前 HF/reference `ep_size=1`，没有真实 EP collective：`research/kimi-k3/modeling_kimi_linear.py:785-805`。
+- 假设 down-projection 后 dispatch：
+  `B×S×3584×16×activation_bytes×remote_fraction`
+- 不再显示 KDA=217MB。
+- MLA optimized 27.648GB 必须标“subtotal，KDA state 未计”。
+
+**证据**
+
+- `configs/kimi-k3-config.json:181-201`
+- `configs/kimi-k3-config.json:246-266`
+- `research/kimi-k3/modeling_kimi_linear.py:771-831`
+- `research/kimi-k3/modeling_kimi_linear.py:995-1028`
+
+### 3.4 DeepSeek-V4
+
+**节点**
+
+- hidden `(B,S,4096)`
+- HC ×4 / Sinkhorn 20 iterations
+- Q：64 heads ×512，按 TP 分片
+- MQA KV：单个 512 维 projection
+- sliding window 128
+- ratio=4 Indexer
+- ratio=128 compressed history
+- MoE router：256、top-6
+- rank-local experts
+- shared expert
+- output all-reduce
+- DSpark 单独版本边界框
+
+**连线**
+
+- `wq_b` ColumnParallel
+- `wkv` 非并行 Linear，因此 reference 中 KV 在各 rank 重复计算/保存
+- Indexer local head scores → `dist.all_reduce(index_score)` → global top-k
+- rank-local expert results → `dist.all_reduce(y)`
+- shared expert → local add
+
+**通信标注**
+
+- Indexer 不是“完全无通信”：`research/deepseek-v4/model.py:417-433`。
+- Expert reference collective 是 all-reduce，不是 AllToAll：`:615-648`。
+- FP4 只标专家权重格式，不改变 BF16 activation payload。
+- 若附加 runtime EP 版本，使用虚线并标 deployment assumption。
+
+**证据**
+
+- `configs/deepseek-v4-flash-config.json:12-35`
+- `configs/deepseek-v4-flash-config.json:65-68`
+- `research/deepseek-v4/model.py:89-110`
+- `research/deepseek-v4/model.py:162-183`
+- `research/deepseek-v4/model.py:428-429`
+- `research/deepseek-v4/model.py:615-648`
+
+### 3.5 Qwen3.6
+
+**节点**
+
+- hidden `(B,S,5120)`
+- repeating group：3 linear + 1 full ×16
+- linear Q/K/V conv
+- FP32 recurrent state `48×128×128`
+- BF16/selected dtype conv state
+- full GQA：24 Q heads、4 KV heads、head dim 256
+- output projection
+- MLP
+- MTP/vision 作为边界节点，不混入纯文本主干通信
+
+**连线**
+
+- Linear layer → recurrent/conv state
+- Full attention → growing GQA KV
+- TP plan 与模型计算图分层显示
+
+**通信标注**
+
+- Transformers TP plan：
+  - full q/k/v 为 colwise；
+  - full o_proj 为 rowwise；
+  - linear projections/out_proj 使用 `colwise_gather_output`。
+- 因此旧图“每 GPU 24 个 recurrent heads、out_proj 后单次 AllReduce”的固定布局不能保留。
+- collective 只标 runtime tensor payload；不能把 payload 等同实际 wire traffic。
+
+**证据**
+
+- `configs/qwen3.6-27b-config.json:15-18`
+- `configs/qwen3.6-27b-config.json:21-98`
+- `research/qwen3.6/configuration_qwen3_5.py:56-72`
+- `research/qwen3.6/modeling_qwen3_5.py:447-561`
+
+### 3.6 PD 分离
+
+**节点**
+
+- Prefill
+- transfer manifest
+- Decode
+- 四模型 component stacks
+- bandwidth/efficiency controls
+- completeness warning
+
+**每个模型必须拆成分量**
+
+- Qwen：full KV + FP32 recurrent + conv state
+- GLM reference：expanded KV + Indexer；optimized：576 latent + Indexer
+- Kimi reference：expanded MLA + 未知 KDA；optimized：512+64 + 未知 KDA
+- DeepSeek reference：attention core + Indexer + FP32 Compressor states
+- DeepSeek deployment：FP8 core + raw FP4 Indexer + metadata 未计
+
+**时间标注**
+
+`lower_bound = bytes / (bandwidth × unit_conversion × efficiency)`
+
+并明确：
+
+- 仅为单向 payload 下限；
+- 不含握手、协议、拥塞、序列化、并发和重试；
+- incomplete subtotal 不得用于“哪个模型最快”的排序。
+
+## 4. 恢复实现建议
+
+- 六图使用仓库内静态 SVG；禁止恢复 Mermaid CDN。
+- SVG 每个节点带稳定 ID，邻接正文提供同等信息，确保无 JS 可读。
+- 图例必须视觉区分：
+  - 实线：源码/config 路径
+  - 虚线：deployment assumption
+  - 点线：optimized/theoretical
+- 所有固定数字从 `model-data.js`/计算器生成测试断言，避免 SVG 与计算器再次漂移。
+- 通信图不要硬编码微秒；改成公式和可交互输入。
+- 对 reference 未实现的 TP/EP，标题必须写“部署示意”，不能写“当前实现”。

@@ -1,0 +1,182 @@
+## Review
+
+### 结论
+
+- **Blocker：当前上线版确实删除了核心交付物，不是单纯视觉调整。**
+- 旧版 `d21bf79` 有 **12 张图**：6 张模型结构图和 6 张并行/通信图；当前 `docs/index.html` 没有任何模型结构 SVG 或等价图。
+- 应采用“**课程主线 + 六模型详细图谱 + 工程通信图**”三层结构，不能回滚旧版错误口径，也不能继续用摘要卡替代图。
+
+### 关键发现
+
+- **Blocker：六模型结构图被摘要卡替代。**  
+  当前 `docs/index.html:167-180` 每个模型只有简介和三列 `<dl>`，没有 `<figure>`、SVG、shape 数据流或组件连接关系。旧版六张模型图位于 `d21bf79:docs/index.html:126,264,404,543,697,855`。
+
+- **Blocker：工程通信图全部消失。**  
+  旧版包含集群总览、GLM、Kimi、DeepSeek、Qwen、PD 分离共六张图，位于 `d21bf79:docs/index.html:1036,1086,1168,1257,1340,1404`；当前只有简化的三阶段系统条 `docs/index.html:149-152`。
+
+- **High：页面信息气味已变成纯课程。**  
+  标题和 Hero 只强调课程与证据手册，见 `docs/index.html:7-8,31-38`；工程师无法从首屏确认“六模型详细架构图”仍是核心内容。
+
+- **High：测试只禁止 Mermaid，没有要求替代图存在。**  
+  `tests/site.test.mjs:107` 禁止 `mermaid`，但没有断言六模型结构图、文字等价说明或工程图存在，因此发生了“成功移除运行时，也成功移除内容”的测试盲点。
+
+- **High：现有资源预算会阻止合理恢复。**  
+  `tests/site.test.mjs:118-125` 将 HTML 限制为 60 KB、全部静态资源限制为 150 KB。应拆分 SVG 资源并为图单独设预算，而不是通过删除内容达标。
+
+- **Medium：当前图片规则会让复杂图在手机上缩成不可读缩略图。**  
+  `docs/assets/course.css:7` 对 `img, svg` 设置 `max-width:100%`，但没有局部横向滚动、最小图宽或“打开原图”入口。
+
+### 已有基础应保留
+
+- `docs/index.html:21-25` 的键盘可达 sticky 导航和阅读进度可继续使用。
+- `docs/assets/course.js:29-61` 已有 hash、`aria-current`、移动端活动项居中能力，只需扩展目标映射。
+- `docs/index.html:14-16` 的无 JavaScript 策略正确。
+- `docs/index.html:6` 的严格 CSP 应保持；不要用 `<object>`、iframe 或 Mermaid CDN。
+- 暗亮主题、reduced-motion、44px 控件和计算器不需要重写。
+
+## 最小可行整合方案
+
+### 1. 页面层级
+
+建议顺序：
+
+1. Hero：明确“双入口”
+   - `开始六课`
+   - `直接看六模型架构图`
+2. 六章课程：保持当前内容
+3. `#models`：改名为“六模型结构与原理图谱”
+4. `#systems`：恢复“并行与推理系统图”
+5. 横向对比
+6. 来源与版本
+
+顶部导航保留六课，再增加：
+
+- `模型图谱`
+- `工程图`
+
+不要把六个模型全部塞入 sticky 导航；在 `#models` 内增加六模型锚点索引。
+
+### 2. 每个模型必须始终可见的内容
+
+每个 `article#model-*`：
+
+1. 一句话定位与关键配置
+2. **完整结构图**，不可默认折叠
+3. 图下方可搜索的文字数据流
+4. 3–7 张核心原理卡
+5. reference / optimized / deployment 边界
+6. 来源链接
+7. 可折叠的源码和公式深挖
+
+核心图不能放进默认关闭的 `<details>`，否则用户仍会感觉“图没了”。
+
+### 3. 静态 SVG 资产
+
+建议恢复以下 12 个本地文件：
+
+```text
+docs/assets/diagrams/model-nanogpt.svg
+docs/assets/diagrams/model-minimind.svg
+docs/assets/diagrams/model-qwen.svg
+docs/assets/diagrams/model-glm.svg
+docs/assets/diagrams/model-kimi.svg
+docs/assets/diagrams/model-deepseek.svg
+docs/assets/diagrams/system-overview.svg
+docs/assets/diagrams/system-glm-tp-ep.svg
+docs/assets/diagrams/system-kimi-tp-ep.svg
+docs/assets/diagrams/system-deepseek-tp-ep.svg
+docs/assets/diagrams/system-qwen-tp.svg
+docs/assets/diagrams/system-pd.svg
+```
+
+SVG 要求：
+
+- 只使用 `<svg>`、`<g>`、`<rect>`、`<path>`、`<text>` 等静态元素。
+- 禁止 `<script>`、事件属性、外链、`foreignObject`。
+- 必须有 `viewBox`、明确 `width/height`，避免 CLS。
+- 使用适用于亮暗背景的固定高对比科研面板色。
+- 每图提供简短 `alt`、`figcaption` 和 HTML 文字版流程。
+- 提供“打开原图”链接，方便缩放查看。
+- 使用 `loading="lazy"` 和 `decoding="async"`。
+
+推荐结构：
+
+```html
+<figure class="architecture-figure">
+  <div class="diagram-scroll" role="region"
+       aria-label="nanoGPT 架构图，可横向滚动" tabindex="0">
+    <img src="./assets/diagrams/model-nanogpt.svg"
+         width="1200" height="720"
+         loading="lazy" decoding="async"
+         alt="nanoGPT 从 token embedding 到十二层 Transformer 和语言模型头的数据流">
+  </div>
+  <figcaption>图中实线为前向路径，虚线为权重共享。</figcaption>
+</figure>
+```
+
+### 4. 移动端
+
+增加专用规则：
+
+```css
+.diagram-scroll {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.diagram-scroll img {
+  width: max(100%, 760px);
+  max-width: none;
+}
+```
+
+这样复杂图不会缩到无法阅读，页面本身也不会横向溢出。
+
+### 5. 渐进披露
+
+- 结构图与核心原理：始终显示。
+- 源码细节、公式推导、版本差异：原生 `<details>`。
+- `<details>` 无需 JavaScript，键盘和无 JS 均可操作。
+- 可选“展开全部”按钮必须默认 `disabled`，由 JS 成功初始化后启用。
+- 深链应指向模型 article 或始终可见的小节，不要指向默认关闭内容。
+
+## 测试验收
+
+### 静态测试
+
+新增断言：
+
+- 六个 `article#model-*` 都包含本地 SVG `<img>`、`figcaption` 和文字版流程。
+- 六张工程图存在于 `#systems`。
+- 12 个 SVG 均可读取且包含 `<svg>`、`viewBox`。
+- SVG 不含 script、事件属性、外部 URL、`foreignObject`。
+- 所有图片有非空 `alt`、明确 width/height、lazy loading。
+- 页面无 Mermaid/CDN，但必须有静态图替代物。
+- 所有图链接均为仓库相对路径。
+- 图资产逐文件和总量预算，而不是只限制 HTML。
+
+建议预算：
+
+- HTML `< 120 KB`
+- JS 总量 `< 50 KB`
+- CSS `< 75 KB`
+- 单张 SVG `< 40 KB`
+- 12 图总量 `< 300 KB`
+- 全部静态资源 `< 500 KB`
+
+### Playwright
+
+- 320、480、1440px 页面级横向溢出为 0。
+- 图滚动区域自身可横向滚动并可通过键盘聚焦。
+- `#model-kimi`、`#systems` 等 hash 深链定位正确。
+- 暗亮主题截图中节点、文字、边线均可辨认。
+- 禁用 JS 后六图、六工程图和原理正文仍存在。
+- Console error、pageerror、跨域请求均为 0。
+- Axe 暗亮主题保持 0 violation。
+- Lighthouse 验证 SVG lazy loading 不破坏 LCP/CLS。
+
+## 风险边界
+
+- 旧版图只能作为“内容库存”，不能直接恢复；其中已有 KV cache、通信量、MTP 和部署口径错误。
+- 外部 SVG 作为 `<img>` 时内部文字不会成为可靠的无障碍文本，因此 HTML 文字版流程是必需项。
+- 自动化 Axe 不会完整检测图片内部的文字对比度，需要截图或调色板对比度单测。
+- 如果只恢复六张模型图、不恢复原理卡和工程图，仍不能满足用户原始诉求。

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 
 const url = (path) => new URL(`../${path}`, import.meta.url);
@@ -9,6 +10,14 @@ const course = await readFile(url('docs/assets/course.js'), 'utf8');
 const css = await readFile(url('docs/assets/course.css'), 'utf8');
 const modelData = await readFile(url('docs/assets/model-data.js'), 'utf8');
 const calculators = await readFile(url('docs/assets/calculators.js'), 'utf8');
+const modelDiagramIds = ['nanogpt', 'minimind', 'qwen', 'glm', 'kimi', 'deepseek'];
+const systemDiagramIds = ['overview', 'glm-tp-ep', 'kimi-tp-ep', 'deepseek-tp-ep', 'qwen-tp', 'pd'];
+const diagramFiles = [
+  ...modelDiagramIds.map((id) => `docs/assets/diagrams/model-${id}.svg`),
+  ...systemDiagramIds.map((id) => `docs/assets/diagrams/system-${id}.svg`),
+];
+const diagramManifest = JSON.parse(await readFile(url('diagrams/manifest.json'), 'utf8'));
+const sha256 = (content) => createHash('sha256').update(content).digest('hex');
 
 const segment = (start, end) => html.slice(html.indexOf(start), html.indexOf(end, html.indexOf(start)));
 
@@ -16,6 +25,68 @@ test('page is progressive HTML with six lessons and six model references', () =>
   for (let index = 1; index <= 6; index += 1) assert.match(html, new RegExp(`<section\\b[^>]+id="lesson-${index}"`));
   for (const id of ['nanogpt', 'minimind', 'qwen', 'glm', 'kimi', 'deepseek']) assert.match(html, new RegExp(`<article\\b[^>]+id="model-${id}"`));
   assert.doesNotMatch(html, /class="[^"]*\bsec\b[^"]*"/);
+});
+
+test('six model dossiers restore architecture figures, transcripts, and principle cards', () => {
+  for (const id of modelDiagramIds) {
+    const article = segment(`id="model-${id}"`, '</article>');
+    assert.match(article, new RegExp(`<figure\\b[^>]+class="architecture-figure"[^]*src="\\./assets/diagrams/model-${id}\\.svg"`));
+    assert.match(article, /<figcaption>/);
+    assert.match(article, /class="diagram-transcript"/);
+    assert.ok((article.match(/class="principle-card"/g) || []).length >= 3, `${id} needs at least three principle cards`);
+    if (id === 'qwen' || id === 'kimi') assert.match(article, /class="diagram-scroll diagram-scroll-ultrawide"/);
+    if (id === 'glm' || id === 'deepseek') assert.match(article, /class="diagram-scroll diagram-scroll-wide"/);
+  }
+});
+
+test('engineering reference restores six local system figures', () => {
+  const systems = segment('id="systems"', '</section>');
+  for (const id of systemDiagramIds) assert.match(systems, new RegExp(`src="\\./assets/diagrams/system-${id}\\.svg"`));
+  assert.equal((systems.match(/<figure\b[^>]+class="architecture-figure/g) || []).length, 6);
+  assert.match(systems, /class="diagram-scroll diagram-scroll-ultrawide"[^>]+六模型 PD 分离/);
+  assert.match(css, /\.diagram-scroll-wide img\s*\{[^}]*min-width:\s*1500px/);
+  assert.match(css, /\.diagram-scroll-ultrawide img\s*\{[^}]*min-width:\s*2200px/);
+  assert.match(html, /<a href="#systems">工程图<\/a>/);
+});
+
+test('diagram SVGs are static, local, accessible, and safely embeddable', async () => {
+  for (const file of diagramFiles) {
+    const svg = await readFile(url(file), 'utf8');
+    assert.match(svg, /<svg\b[^>]+viewBox=/, `${file} needs viewBox`);
+    assert.doesNotMatch(svg, /<script\b|<foreignObject\b|\son[a-z]+\s*=|(?:href|src)=["']https?:|url\(https?:/i, `${file} must be inert and local`);
+    for (const cluster of svg.matchAll(/class="cluster"[^>]*><path\b([^>]*)>/g)) {
+      const inlineDark = /fill:#111821!important/.test(cluster[1]);
+      const stylesheetDark = /\.cluster path\{fill:#111821!important/.test(svg);
+      assert.ok(inlineDark || stylesheetDark, `${file} cluster path must stay dark`);
+    }
+    const basename = file.slice(file.lastIndexOf('/') + 1);
+    const escapedBasename = basename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const imagePattern = new RegExp(`<img\\b(?=[^>]*src="\\./assets/diagrams/${escapedBasename}")(?=[^>]*alt="[^"]+")(?=[^>]*width="\\d+")(?=[^>]*height="\\d+")(?=[^>]*loading="lazy")[^>]*>`);
+    assert.match(html, imagePattern);
+  }
+});
+
+test('diagram manifest binds every MMD source to its SVG and intrinsic aspect ratio', async () => {
+  assert.notEqual(diagramManifest.renderer.mermaidCli, 'unknown');
+  assert.notEqual(diagramManifest.renderer.svgo, 'unknown');
+  assert.deepEqual(diagramManifest.files.map(({ name }) => name), diagramFiles.map((file) => file.match(/([^/]+)\.svg$/)[1]).sort());
+  for (const entry of diagramManifest.files) {
+    const [source, svg] = await Promise.all([
+      readFile(url(`diagrams/${entry.name}.mmd`)),
+      readFile(url(`docs/assets/diagrams/${entry.name}.svg`)),
+    ]);
+    assert.equal(sha256(source), entry.sourceSha256, `${entry.name} MMD drift`);
+    assert.equal(sha256(svg), entry.svgSha256, `${entry.name} SVG drift`);
+    const svgText = svg.toString('utf8');
+    assert.equal(svgText.match(/viewBox="([^"]+)"/)?.[1], entry.viewBox);
+    const [, , viewWidth, viewHeight] = entry.viewBox.split(/\s+/).map(Number);
+    const imageTag = html.match(new RegExp(`<img\\b[^>]*src="\\./assets/diagrams/${entry.name}\\.svg"[^>]*>`))?.[0] ?? '';
+    const width = Number(imageTag.match(/\bwidth="(\d+)"/)?.[1]);
+    const height = Number(imageTag.match(/\bheight="(\d+)"/)?.[1]);
+    assert.ok(width > 0 && height > 0, `${entry.name} intrinsic dimensions missing`);
+    const aspectError = Math.abs((width / height) / (viewWidth / viewHeight) - 1);
+    assert.ok(aspectError < 0.002, `${entry.name} intrinsic aspect ratio drift`);
+  }
 });
 
 test('strict CSP and local runtime resources are declared', () => {
@@ -63,6 +134,8 @@ test('dataflow uses native buttons and progress exposes synchronized semantics',
   assert.match(course, /location\.hash/);
   assert.match(course, /hashchange/);
   assert.match(course, /nav\.scrollTo/);
+  assert.match(course, /scrollIntoView\(\{ block: 'start'/);
+  assert.match(course, /addEventListener\('load'/);
   assert.match(course, /comparison/);
   assert.match(course, /sources/);
 });
@@ -91,6 +164,7 @@ test('accessibility styling includes 44px theme target, no rotated mobile prose,
   assert.match(css, /\.quiet-button[^}]*min-height:\s*44px/s);
   assert.doesNotMatch(css, /\.system-map i\s*\{[^}]*transform:\s*rotate/s);
   assert.match(css, /--derived:\s*#[0-9a-f]{6}/i);
+  assert.equal((css.match(/--accent:\s*#006b61/g) || []).length, 2);
   assert.match(css, /\.badge\.derived\s*\{\s*color:\s*var\(--derived\)/);
   assert.match(html, /有效利用率（0–1）/);
   assert.match(html, /id="comm-bandwidth"[^>]+step="0\.01"[^>]+value="400"/);
@@ -116,14 +190,19 @@ test('all executable modules reject network and unsafe HTML APIs without whole-f
   assert.doesNotMatch(html, /mermaid/i);
 });
 
-test('resource budgets cover HTML, JavaScript, CSS, and total static payload', async () => {
-  const files = ['docs/index.html', 'docs/assets/course.js', 'docs/assets/calculators.js', 'docs/assets/model-data.js', 'docs/assets/course.css', 'docs/assets/favicon.svg', 'docs/robots.txt'];
-  const sizes = await Promise.all(files.map((file) => stat(url(file))));
-  const [htmlSize, courseSize, calculatorsSize, dataSize, cssSize] = sizes.map((entry) => entry.size);
-  assert.ok(htmlSize < 60_000);
+test('resource budgets cover prose, runtime code, and restored static diagrams independently', async () => {
+  const coreFiles = ['docs/index.html', 'docs/assets/course.js', 'docs/assets/calculators.js', 'docs/assets/model-data.js', 'docs/assets/course.css', 'docs/assets/favicon.svg', 'docs/robots.txt'];
+  const [coreSizes, diagramSizes] = await Promise.all([
+    Promise.all(coreFiles.map((file) => stat(url(file)))),
+    Promise.all(diagramFiles.map((file) => stat(url(file)))),
+  ]);
+  const [htmlSize, courseSize, calculatorsSize, dataSize, cssSize] = coreSizes.map((entry) => entry.size);
+  assert.ok(htmlSize < 130_000);
   assert.ok(courseSize + calculatorsSize + dataSize < 50_000);
-  assert.ok(cssSize < 60_000);
-  assert.ok(sizes.reduce((sum, entry) => sum + entry.size, 0) < 150_000);
+  assert.ok(cssSize < 75_000);
+  assert.ok(diagramSizes.every((entry) => entry.size < 85_000));
+  assert.ok(diagramSizes.reduce((sum, entry) => sum + entry.size, 0) < 850_000);
+  assert.ok([...coreSizes, ...diagramSizes].reduce((sum, entry) => sum + entry.size, 0) < 1_050_000);
 });
 
 test('package verify and Pages workflow gate deployment on Node 22 verification', async () => {

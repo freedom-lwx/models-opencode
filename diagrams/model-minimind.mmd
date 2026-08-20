@@ -1,0 +1,39 @@
+flowchart TB
+  IN["input_ids<br/>B × T"]:::input --> EMB["embed_tokens<br/>V → 768"]:::source
+  ROPE["RoPE cos / sin<br/>position starts at past length"]:::source
+
+  subgraph BLOCK["MiniMindBlock × 8 · Pre-RMSNorm"]
+    direction TB
+    H0["block input<br/>B × T × 768"]:::source
+    N1["RMSNorm"]:::source
+    Q["Q projection<br/>8 heads × 96"]:::source
+    KV["K / V projections<br/>4 KV heads × 96"]:::source
+    QKN["QK-Norm + RoPE"]:::source
+    CACHE["reference cache before repeat<br/>K + V: B × Ttotal × 4 × 96"]:::state
+    REPEAT["repeat_kv × 2<br/>attention only: 4 → 8 heads"]:::source
+    ATTN["causal GQA<br/>new query reads Ttotal history"]:::source
+    OP["o_proj 768 → 768"]:::source
+    ARES["attention residual add"]:::source
+    N2["RMSNorm"]:::source
+    FFN["SwiGLU / optional MoE<br/>gate · up · down"]:::source
+    OUT["FFN residual add<br/>next block input"]:::source
+    H0 --> N1 --> Q --> QKN --> ATTN --> OP --> ARES --> N2 --> FFN --> OUT
+    N1 --> KV --> QKN
+    KV --> CACHE --> REPEAT --> ATTN
+    H0 -. "skip" .-> ARES
+    ARES -. "skip" .-> OUT
+  end
+
+  EMB --> H0
+  ROPE --> QKN
+  OUT --> FINAL["Final RMSNorm"]:::source --> HEAD["tied lm_head<br/>768 → V"]:::output
+  HEAD --> GEN["generation loop<br/>next forward receives input_ids[:, past_len:]"]:::output
+  YARN["YaRN default: off<br/>configured context limit: 32K"]:::warn -.-> ROPE
+  COMPLEX["KV cache avoids old K/V projections<br/>full-attention decode still O(T) per new token"]:::note -.-> ATTN
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef state fill:#352c43,stroke:#d5aaff,color:#faf5ff;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef note fill:#3d3425,stroke:#ffb86b,color:#fff9ec;

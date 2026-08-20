@@ -1,0 +1,25 @@
+flowchart TB
+  H["hidden<br/>B × S × 4096 · HC ×4"]:::input
+  H --> HC["mHC pre/post mixing<br/>Sinkhorn 20 in hc_pre"]:::source
+  HC --> Q["ColumnParallel Q<br/>64 heads × 512"]:::source
+  HC --> KV["non-parallel MQA KV<br/>single 512 projection<br/>replicated per reference rank"]:::source
+  Q --> ATTN["window + compressed sparse attention"]:::source
+  KV --> ATTN
+  INDEX["ratio-4 Indexer<br/>local scores"]:::source --> SCORE_AR["reference dist.all_reduce<br/>global index scores"]:::collective --> ATTN
+  ATTN --> MOE["router<br/>256 experts · top-6"]:::source
+  MOE --> LOCAL["rank-local routed experts"]:::source --> EXP_AR["reference dist.all_reduce(y)<br/>merge expert outputs"]:::collective
+  HC --> SHARED["1 shared expert"]:::source
+  EXP_AR --> SUM["routed + shared"]:::source
+  SHARED --> SUM --> OUT["block output<br/>B × S × 4 × 4096"]:::output
+
+  EP["alternative runtime EP<br/>dispatch / combine AllToAll"]:::deploy -. "deployment only" .-> LOCAL
+  FP4["FP4 expert weights do not imply<br/>FP4 activation communication"]:::warn -.-> LOCAL
+  DSP["DSpark is a separate versioned lane<br/>not a 7-logit communication protocol"]:::note -.-> OUT
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef collective fill:#352c43,stroke:#d5aaff,color:#faf5ff;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef deploy fill:#3d3425,stroke:#ffb86b,color:#fff9ec,stroke-dasharray:5 4;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef note fill:#263856,stroke:#83b7ff,color:#f4f7fa;

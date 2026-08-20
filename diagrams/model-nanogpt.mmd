@@ -1,0 +1,37 @@
+flowchart TB
+  IN["input_ids<br/>B × T"]:::input
+  TOK["Token embedding<br/>V × 768"]:::source
+  POS["Position embedding<br/>1024 × 768"]:::source
+  ADD["Add + dropout<br/>B × T × 768"]:::source
+  IN --> TOK --> ADD
+  POS --> ADD
+
+  subgraph BLOCK["Transformer Block × 12 · Pre-LN"]
+    direction TB
+    H0["block input<br/>B × T × 768"]:::source
+    LN1["LayerNorm"]:::source
+    QKV["c_attn 768 → 2304<br/>Q / K / V: 12 heads × 64"]:::source
+    ATT["causal attention<br/>B × 12 × T × T"]:::source
+    PROJ["c_proj 768 → 768"]:::source
+    RES1["attention residual add"]:::source
+    LN2["LayerNorm"]:::source
+    MLP["GELU MLP<br/>768 → 3072 → 768"]:::source
+    RES2["MLP residual add<br/>next block input"]:::source
+    H0 --> LN1 --> QKV --> ATT --> PROJ --> RES1 --> LN2 --> MLP --> RES2
+    H0 -. "skip" .-> RES1
+    RES1 -. "skip" .-> RES2
+  end
+
+  ADD --> H0
+  RES2 --> FINAL["Final LayerNorm"]:::source
+  FINAL --> HEAD["tied lm_head<br/>768 → V"]:::source
+  HEAD --> LOGITS["logits<br/>train B × T × V<br/>inference B × 1 × V"]:::output
+
+  NOCACHE["reference: no KV cache<br/>each step reruns the window"]:::warn -.-> ATT
+  SHIFT["target shift happens in data loading<br/>not inside GPT.forward"]:::note -.-> LOGITS
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef note fill:#352c43,stroke:#d5aaff,color:#faf5ff;

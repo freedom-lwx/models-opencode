@@ -1,0 +1,519 @@
+## Review
+
+### 结论
+
+- **Blocker**：不能把 `d21bf79` 的六张 Mermaid 模型图原样恢复。旧图保留了用户需要的深度，但至少包含 nanoGPT target shift、MiniMind decode 复杂度、Qwen 实际配置维度、Kimi MLA value 维度/MTP、GLM“唯一原创”、DeepSeek 版本边界等错误或过度断言。
+- **Correct**：恢复应以现有源码审计图为结构底稿：
+  - nanoGPT / MiniMind：`FULL_ANALYSIS.md:22-78`、`FULL_ANALYSIS.md:98-180`
+  - Qwen：`arch_qwen3.6.md:35-147`
+  - GLM：`arch_glm5.2.md:58-200`
+  - Kimi：`arch_kimi_k3.md:25-174`
+  - DeepSeek：`arch_deepseek_v4.md:14-126`
+- **Blocker**：上述审计图自身也不能直接编译；部分按配置类默认值绘制，而非实际模型 config。尤其 Qwen 和 Kimi 存在明确 shape 错误。
+- **Note**：推荐恢复为 6 张“主结构图”加可展开子图；reference 实际路径用实线，optimized/deployment/config-only 路径用虚线，避免再次混淆证据口径。
+
+---
+
+# 六模型校正后图规格
+
+## 1. nanoGPT
+
+### 必须恢复的模块、shape 与连线
+
+主链：
+
+1. `input_ids (B,T)`
+2. Token embedding：`Embedding(V,768)`
+3. Position embedding：`Embedding(1024,768)`
+4. 相加、Dropout：`(B,T,768)`
+5. `12 × Block`
+   - `LayerNorm`
+   - Causal MHA
+   - residual
+   - `LayerNorm`
+   - GELU MLP `768 → 3072 → 768`
+   - residual
+6. Final LayerNorm
+7. tied lm_head：`768 → V`
+8. 训练：`logits (B,T,V)` 与外部已 shift targets 对齐
+9. 推理：只投影最后位置，输出 `(B,1,V)`
+
+Attention 子图：
+
+- `c_attn: 768 → 2304`
+- split Q/K/V，各 `(B,T,768)`
+- reshape `(B,12,T,64)`
+- causal SDPA / masked softmax
+- concat `(B,T,768)`
+- `c_proj: 768 → 768`
+
+证据：
+
+- Pre-LN 双残差：`nanoGPT/model.py:98-105`
+- embedding、block 循环、final norm：`nanoGPT/model.py:126-133,177-182`
+- weight tying：`nanoGPT/model.py:138`
+- 训练 CE 不执行内部 shift：`nanoGPT/model.py:170,186-187`
+- 推理只取最后位置：`nanoGPT/model.py:189-190`
+- 规格：`docs/assets/model-data.js:12-17`
+
+### 旧图不可原样恢复
+
+- **High**：`cross_entropy(shift)` 错误。`GPT.forward` 直接将 logits 与 targets flatten 对齐；shift 在数据加载端完成。
+- **High**：不能写“有 KV cache”或“每步 O(T)”。reference forward 无 `past_key_values` 参数，每步重跑整个窗口；attention 主项为 `O(T²)`，线性层为 `O(T)`。
+- **Medium**：旧 Mermaid 用 `BLK → BLK` 自环表达重复，视觉上像循环依赖；应使用“×12 repeated stack”容器。
+
+### 校正图标签
+
+- `[源码事实] reference：无 KV cache`
+- `[推导] 每步重跑窗口，attention 主项 O(T²)`
+- `[源码事实] target shift 在数据加载端，不在 GPT.forward`
+
+---
+
+## 2. MiniMind
+
+### 必须恢复的模块、shape 与连线
+
+主链：
+
+1. `input_ids (B,T)`
+2. `embed_tokens: V → 768`
+3. RoPE cos/sin，位置从 past KV 长度开始
+4. `8 × MiniMindBlock`
+   - RMSNorm
+   - GQA + KV cache
+   - residual
+   - RMSNorm
+   - SwiGLU 或可选 MoE
+   - residual
+5. final RMSNorm
+6. tied lm_head：`768 → V`
+7. generation loop：仅将 `input_ids[:, past_len:]` 送入下一次 forward
+
+Attention 子图：
+
+- Q：`768 → 8×96`，shape `(B,T,8,96)`
+- K/V：各 `768 → 4×96`，shape `(B,T,4,96)`
+- QK-Norm
+- RoPE
+- 先拼接 past K/V，cache 保持 `(B,Ttotal,4,96)`
+- `repeat_kv ×2` 仅用于 attention 计算
+- SDPA / decode attention
+- output projection `768 → 768`
+
+FFN 子图：
+
+- gate/up：`768 → intermediate`
+- `SiLU(gate) × up`
+- down：`intermediate → 768`
+
+证据：
+
+- Q/K/V、QK-Norm：`minimind/model/model_minimind.py:100-105,111-119`
+- cache 先拼接、再 repeat：`minimind/model/model_minimind.py:120-125`
+- SwiGLU：`minimind/model/model_minimind.py:140-146`
+- 双 RMSNorm 残差：`minimind/model/model_minimind.py:181-193`
+- 8 层主干与 final norm：`minimind/model/model_minimind.py:200-204,221-230`
+- tied head：`minimind/model/model_minimind.py:240-242`
+- decode 只传新 token：`minimind/model/model_minimind.py:257-265`
+- 实际规格：`docs/assets/model-data.js:21-28`
+
+### 旧图不可原样恢复
+
+- **High**：不能写“KV Cache 令 decode O(1)”。它只避免历史 K/V 重投影；新 query 仍对历史 K/V attention，随历史长度线性增长。
+- **High**：不能默认显示 YaRN 正在使用。模型上限 32K，但 YaRN 默认关闭。
+- **Medium**：cache 图必须显示保存的是 repeat 前的 4 个 KV heads，而不是 attention 内部 repeat 后的 8 heads。
+- **Medium**：1M 上下文不能作为该 config 的有效示例。
+
+### 校正图标签
+
+- `[源码事实] cache: (B,T,4,96) K + V`
+- `[源码事实] YaRN 默认关闭；配置上限 32K`
+- `[推导] full-attention decode 仍为 O(T) / 新 token`
+
+---
+
+## 3. Qwen3.6-27B
+
+### 必须恢复的模块、shape 与连线
+
+实际 config 主链：
+
+1. 文本 `input_ids → embed_tokens → (B,S,5120)`
+2. 可选视觉：
+   - Conv3d patch embedding，视觉 hidden 1152
+   - 27 Vision Blocks
+   - PatchMerger 输出 **5120**
+   - masked scatter 到文本占位 token
+3. MRoPE position embeddings
+4. `64 × DecoderLayer`
+   - 每 4 层 `[linear, linear, linear, full]`
+   - 共 48 Gated DeltaNet + 16 Gated GQA
+   - 每层后接 SwiGLU `5120 → 17408 → 5120`
+5. final RMSNorm
+6. 独立 lm_head `5120 → 248320`
+
+Gated DeltaNet 子图：
+
+- combined QKV：
+  - key heads 16 × 128 = 2048
+  - value heads 48 × 128 = 6144
+  - `in_proj_qkv: 5120 → 2048×2+6144 = 10240`
+- `in_proj_z: 5120 → 6144`
+- `in_proj_b/a: 5120 → 48`
+- grouped Conv1d kernel=4，combined dim 10240
+- q/k repeat 到 48 value heads
+- beta + decay gate
+- recurrent delta state `(B,48,128,128)`，FP32
+- gated RMSNorm
+- output `6144 → 5120`
+
+Gated GQA 子图：
+
+- Q projection 含 gate：`5120 → 24×256×2 = 12288`
+- split Q 与 gate：各 `(B,S,24,256)`
+- K/V：各 `5120 → 4×256 = 1024`
+- QK-Norm
+- partial MRoPE：每头 64/256 维
+- GQA：4 KV heads 服务 24 Q heads
+- attention output `(B,S,24×256=6144)`
+- swish/sigmoid output gate
+- `o_proj: 6144 → 5120`
+
+证据：
+
+- 实际 config：`configs/qwen3.6-27b-config.json:18,20,88-99,133`
+- combined QKV 公式：`research/qwen3.6/modeling_qwen3_5.py:447-450`
+- Q/K/V 与 gate projection：`research/qwen3.6/modeling_qwen3_5.py:660-668`
+- 层分派：`research/qwen3.6/modeling_qwen3_5.py:764-768,786-810`
+- 64 层实例化：`research/qwen3.6/modeling_qwen3_5.py:1153-1155,1217`
+- lm_head：`research/qwen3.6/modeling_qwen3_5.py:1713,1829`
+- reference 忽略 MTP 权重：`research/qwen3.6/modeling_qwen3_5.py:823,1614`
+- cache 状态规格：`docs/assets/model-data.js:31-48`
+
+### 旧图不可原样恢复
+
+- **Critical**：`arch_qwen3.6.md` 主图使用默认 4096 hidden、16 Q heads、32 value heads、视觉输出 3584；实际 27B 是 5120、24 Q heads、48 value heads、视觉输出 5120。
+- **Critical**：combined QKV 不是 8192，而是 **10240**。
+- **Critical**：full-attention q_proj 不是 8192，而是 **12288**。
+- **High**：full-attention output 内宽为 6144，不是 4096；之后才由 o_proj 降回 5120。
+- **High**：不能把 MTP 画成当前 reference 的可执行节点。config 声明 `mtp_num_hidden_layers=1`，但本地 reference 只忽略 `^mtp.*` 权重，没有对应 forward。
+- **Medium**：名称是 Qwen3.6，但复用 `qwen3_5` implementation family；不要画成两个不同模型。
+
+### 校正图标签
+
+- 实线：当前 Transformers reference 实际执行路径。
+- 虚线注释：`[配置值] mtp_num_hidden_layers=1；[源码事实] 当前快照未实现 MTP forward`。
+- Cache 旁注：16 层 GQA KV + 48 层 FP32 recurrent state + 48 层 combined-QKV conv state。
+
+---
+
+## 4. GLM-5.2
+
+### 必须恢复的模块、shape 与连线
+
+主链：
+
+1. `input_ids (B,S)`
+2. embedding：`V → 6144`
+3. interleaved RoPE
+4. `78 × DecoderLayer`
+   - 层 0–2：Dense SwiGLU
+   - 层 3–77：MoE
+   - 每层均为 MLA + DSA
+5. final RMSNorm
+6. 独立 lm_head
+
+MLA 子图：
+
+- Q LoRA：`6144 → 2048 → 64×256`
+- Q split：nope 192 + rope 64
+- compressed KV：`6144 → 512+64 = 576`
+- latent 512 经 `kv_b_proj` 展开：
+  - K nope：`64×192`
+  - V：`64×256`
+- K rope 64 从 compressed remainder 扩到 64 heads
+- 拼接 K：`64×(192+64)=64×256`
+- **reference cache update 写入展开 K/V**
+- attention top-k mask / sparse indices
+- concat output `64×256=16384`
+- o_proj：`16384 → 6144`
+
+DSA/IndexShare 子图：
+
+- full 层实例化 Indexer，共 21 层
+- shared 层复用前一 full 层 `prev_topk_indices`，共 57 层
+- Indexer：
+  - q_resid `2048 → 32×128`
+  - hidden `6144 → 128` key
+  - interleaved RoPE
+  - ReLU scores
+  - head weights
+  - top-2048 indices
+- reference eager/sdpa：scatter mask
+- flash-MLA：直接 sparse indices
+
+MoE 子图：
+
+- 256 routed experts
+- top-8
+- 1 shared expert
+- router weights归一化并乘 scaling factor
+- routed output + shared output
+
+证据：
+
+- 实际配置：`configs/glm-5.2-config.json:14,17,22-26,108,195,198-222`
+- DSA 来源与 interleaved RoPE：`research/glm-5.2/modeling_glm_moe_dsa.py:168-176,210-239`
+- MLA projection：`research/glm-5.2/modeling_glm_moe_dsa.py:344-368,382-420`
+- full/shared Indexer：`research/glm-5.2/modeling_glm_moe_dsa.py:315-320,376-377,423-436`
+- sparse mask / indices：`research/glm-5.2/modeling_glm_moe_dsa.py:440-451`
+- MoE top-k + shared：`research/glm-5.2/modeling_glm_moe_dsa.py:492,521-527,579-590`
+- 跨层传递：`research/glm-5.2/modeling_glm_moe_dsa.py:616-638,732-741`
+- 21 个实际 Indexer：`docs/assets/model-data.js:50-61`
+
+### 旧图不可原样恢复
+
+- **Critical**：不能把 576 维 latent 画成当前 HF/reference 实际 cache。reference 在 cache update 前已展开 K/V；576 维只能画成 theoretical/optimized 路径。
+- **High**：“唯一原创是 IndexShare”属于谱系/原创性过度断言。源码只足以证明：相对 DeepseekV32 Indexer 使用 interleaved RoPE，并加入 cross-layer top-k sharing。
+- **High**：不能说全部 78 层各自有 Indexer；实际 config 只有 21 个 full Indexer，其余 shared。
+- **Medium**：不能笼统写“transformers 不含 MTP”；应区分 config next-n 声明与当前 reference 忽略额外层权重的行为。
+- **Medium**：最大上下文、cache 维度和 reference/optimized 必须分栏，不得把 deployment kernel 与 HF cache 混在一条实线。
+
+### 校正图标签
+
+- 实线红色 cache：`reference expanded K/V`
+- 虚线蓝色 cache：`optimized/theoretical latent 576`
+- DSA 结构只声明“DeepseekV32-compatible + interleaved RoPE + cross-layer sharing”，不声明“唯一原创”。
+
+---
+
+## 5. Kimi-K3
+
+### 必须恢复的模块、shape 与连线
+
+多模态主链：
+
+1. 文本 embedding：`V → 7168`
+2. MoonViT：
+   - patch embedding，vision hidden 1024
+   - 27 Vision layers
+   - spatial/temporal merge
+   - projector 到 7168
+3. image feature 替换 placeholder token
+4. `93 × DecoderLayer`
+   - 69 KDA
+   - 24 Gated MLA
+   - layer 0 Dense MLP
+   - layer 1–92 MoE
+   - AttnRes 每 12 层形成 block residual
+5. output AttnRes
+6. final RMSNorm
+7. tied lm_head `7168 → 163840`
+8. 无内置 MTP
+
+KDA 子图：
+
+- Q/K/V 各 `7168 → 96×128 = 12288`
+- 三个 ShortConv，kernel=4
+- gate/beta 路径
+- delta recurrent state `(B,96,128,128)`，但 dtype 不在本地证据中完整固定
+- output gate `7168 → 12288`
+- gated norm
+- o_proj `12288 → 7168`
+- cache 同时有 recurrent state 和三组 conv state
+
+MLA 子图：
+
+- Q LoRA：`7168 → 1536 → 96×192`
+- compressed KV：`7168 → 512+64`
+- latent 512 展开：
+  - K nope：`96×128`
+  - V：`96×128`
+- 64 维 remainder 参与 K，形成 K `96×192`
+- **无 RoPE 运算**：`rotary_emb=None`
+- attention：
+  - Q/K `(B,96,S,192)`
+  - V `(B,96,S,128)`
+- output `96×128 = 12288`
+- sigmoid gate `7168 → 12288`
+- o_proj `12288 → 7168`
+- reference cache：展开 K/V
+- optimized/theoretical：512 latent + 64 key remainder
+
+AttnRes 子图：
+
+- 层号 0、12、24、36、48、60、72、84 push，共 8 次
+- block residual 与当前 prefix 拼接
+- RMSNorm
+- 1D score
+- softmax
+- weighted sum
+- attention 前、MLP 前和 final output 均有相应应用点
+
+Latent MoE：
+
+- router hidden 7168
+- 896 experts，top-16
+- routed down projection `7168 → 3584`
+- expert in latent 3584
+- routed up projection `3584 → 7168`
+- 2 shared experts
+- layer 0 使用 Dense MLP，其余 92 层使用 MoE
+
+证据：
+
+- 实际配置：`configs/kimi-k3-config.json:26,46,50,59,176,181-201,246,266,270-298`
+- MLA Q/KV 与无 RoPE：`research/kimi-k3/modeling_kimi_linear.py:335-403,419-430`
+- MLA output gate：`research/kimi-k3/modeling_kimi_linear.py:470-472`
+- KDA Q/K/V + Conv：`research/kimi-k3/modeling_kimi_linear.py:498-515,580-596`
+- KDA recurrent/conv cache：`research/kimi-k3/modeling_kimi_linear.py:573-578,609-648`
+- Latent MoE：`research/kimi-k3/modeling_kimi_linear.py:796-837`
+- AttnRes push：`research/kimi-k3/modeling_kimi_linear.py:995-996`
+- lm_head：`research/kimi-k3/modeling_kimi_linear.py:1241-1248,1301`
+- cache incomplete 口径：`docs/assets/model-data.js:65-80`
+
+### 旧图不可原样恢复
+
+- **Critical**：旧审计图将 MLA V 标为 64 维、output gate 标为 6144；实际 config 是 `v_head_dim=128`，所以 V 为 `96×128`，attention/output gate 内宽为 **12288**。
+- **Critical**：不能只画 512 latent。K 的 64 维 remainder 也必须保留；optimized cache 是 **512+64=576**。
+- **High**：不能把展开 K/V 与 latent cache 混为一个 reference 路径。当前 `KimiDynamicCache` 保存展开 K/V。
+- **High**：KDA recurrent/conv state 不能恢复旧版精确 MB 数；本地证据没有完整固定外部 FLA state dtype/layout。
+- **High**：`num_nextn_predict_layers=0`，不能画 MTP。
+- **Medium**：“每12层共8块”要明确触发层包括 layer 0，而不是误画成 12–84 共7次。
+- **Medium**：`rotary_emb=None` 应画成“无 RoPE 运算”，不要仅根据变量名 `k_rot` 误画 RoPE。
+
+### 校正图标签
+
+- reference MLA cache：`K(96×192)+V(96×128)`
+- optimized/theoretical：`latent 512 + key remainder 64`
+- KDA cache：明确列为“存在但未完整量化”，不可伪装成完整总量。
+
+---
+
+## 6. DeepSeek-V4-Flash-0731
+
+### 必须恢复的模块、shape 与连线
+
+reference inference 主链：
+
+1. `input_ids (B,S)`
+2. parallel embedding：`→ (B,S,4096)`
+3. HC expand：`(B,S,4096) → (B,S,4,4096)`
+4. `43 × Block`
+   - hc_pre attention：4→1
+   - RMSNorm
+   - compressed sparse attention
+   - hc_post：1→4
+   - hc_pre FFN：4→1
+   - RMSNorm
+   - MoE
+   - hc_post：1→4
+5. hc_head：4→1，使用 sigmoid，不是 Sinkhorn
+6. final norm
+7. parallel lm_head
+
+mHC 子图：
+
+- `hc_mult=4`
+- hc_pre 产生 pre/post/comb
+- comb 为 `(4,4)`
+- `hc_sinkhorn_iters=20`
+- hc_post 混合新输出与四份 residual
+- 整个主干保持四份 hidden-state 副本
+
+Attention 子图：
+
+- Q LoRA：`4096 → 1024 → 64×512`
+- 单头 MQA KV：`4096 → 512`
+- RoPE 仅最后 64 维
+- sliding window 128
+- 三类层：
+  - ratio 0：2 层，仅窗口
+  - ratio 4：21 层，overlap compressor + Indexer top-512
+  - ratio 128：20 层，non-overlap compressor，无 Indexer，使用全部压缩位置
+- sparse attention output `(B,S,64,512)`
+- de-RoPE output tail
+- 8 组低秩 output projection
+- `wo_b → 4096`
+
+MoE 子图：
+
+- 256 routed experts
+- top-6
+- 1 shared expert
+- sqrtsoftplus routing
+- noaux bias 仅影响 top-k choice
+- 专家 FP4 是 inference config/kernel 路径；共享专家单独列出
+
+DSpark 必须画为独立版本化旁路：
+
+- HF 主 config：`num_nextn_predict_layers=1`
+- inference snapshot：
+  - 3 DSpark blocks
+  - block_size=5
+  - 注入主干 layer 40/41/42 hidden
+  - `[真实 token + 4 noise tokens]`
+  - main projection
+  - sparse draft attention
+  - Markov head
+  - confidence head
+- 官方 vLLM 示例：7 speculative tokens，属于部署参数，不是上述 block_size 的同一数值
+
+证据：
+
+- HF 主 config：`configs/deepseek-v4-flash-config.json:15-31,51,66`
+- inference config：`research/deepseek-v4/inference_config.json:3-39`
+- Compressor：`research/deepseek-v4/model.py:285-310,325-372`
+- Q/MQA/O projection：`research/deepseek-v4/model.py:459-480,502-547`
+- CSA/HCA 分支：`research/deepseek-v4/model.py:472-477,514-538`
+- shared expert：`research/deepseek-v4/model.py:627-648`
+- mHC：`research/deepseek-v4/model.py:667-686,916-925`
+- Sinkhorn 20：`research/deepseek-v4/kernel.py:372,415-430`
+- DSpark 建立与执行：`research/deepseek-v4/model.py:829-857,898-905,920-935`
+- 当前 cache 口径：`docs/assets/model-data.js:83-101`
+
+### 旧图不可原样恢复
+
+- **Critical**：不能把 HF config 的 next-n=1、inference snapshot 的 MTP=3/block=5、vLLM 7 speculative tokens 合并成单一“DSpark=7 token”路径。
+- **High**：不能声称“0731 相比 Preview 唯一架构变化是 DSpark”，除非另做两个固定 revision 的逐字段/逐源码 diff。
+- **High**：不能把模型卡 agentic 分数变化归因于后训练并作为源码事实。
+- **High**：reference cache 是预分配 buffer；部署 FP8 KV/FP4 Indexer 只能画作 deployment path。
+- **High**：FP4 cache/权重图若没有 scale、metadata、packing/alignment，不得标“完整显存总量”。
+- **Medium**：ratio counts 应按主干 43 层显示 `2/21/20`；inference config 数组尾部还有 DSpark 层的 0，不能误计入主干。
+- **Medium**：mHC 的 Sinkhorn 只在 hc_pre comb 路径；最终 hc_head 是 sigmoid，不能整条链都标 Sinkhorn。
+
+---
+
+# 统一实现规格
+
+每个模型图建议包含以下层级：
+
+1. **Overview lane**：输入 → embedding/vision → repeated blocks → final norm → head。
+2. **Attention detail lane**：投影、head shape、位置编码、cache 写入点。
+3. **FFN/MoE lane**：dense/expert/router/shared expert。
+4. **State/cache lane**：
+   - 实线：reference 实际保存内容；
+   - 虚线：optimized/theoretical；
+   - 点划线：deployment。
+5. **Evidence footer**：每图至少列 config、source、derived 三种 badge。
+6. 禁止将 config-only、reference、deployment 三种路径画在同一无标签实线上。
+
+### 建议静态 SVG 最低内容
+
+| 模型 | 主节点数建议 | 必须有的展开子图 |
+|---|---:|---|
+| nanoGPT | 10–14 | MHA、Pre-LN Block |
+| MiniMind | 12–18 | GQA/cache、SwiGLU、generate |
+| Qwen | 18–26 | DeltaNet、Gated GQA、视觉 |
+| GLM | 20–28 | MLA、DSA/IndexShare、MoE |
+| Kimi | 24–32 | KDA、MLA、AttnRes、LatentMoE、Vision |
+| DeepSeek | 26–36 | mHC、CSA/HCA、MoE、DSpark |
+
+### 残余风险
+
+- `arch_qwen3.6.md` 与 `arch_kimi_k3.md` 中已发现实际 config shape 偏差，实施时必须以 config+源码公式重新生成所有数值。
+- `arch_glm5.2.md` 的配置类默认 `indexer_types` 描述不能覆盖实际 `configs/glm-5.2-config.json`；实际站点应固定显示 21 full Indexers。
+- 外部 FLA 的 Kimi KDA state dtype/layout 本仓库证据不完整。
+- DeepSeek 的 HF、inference、vLLM 三条证据属于不同入口，图形上必须分 lane。
+- 本次为只读审计，未执行 Mermaid/SVG 渲染或浏览器视觉验收。

@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none'; worker-src 'none'">
-  <meta name="description" content="从 token 到推理系统的 Transformer 原理可视化课程与六模型证据手册。">
-  <title>Transformer 原理可视化课程 · 六模型证据手册</title>
+  <meta name="description" content="从 token 到推理系统的 Transformer 课程、六模型结构原理图与工程通信图。">
+  <title>Transformer 原理可视化课程 · 六模型结构图谱</title>
   <link rel="stylesheet" href="./assets/course.css">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
   <script type="module" src="./assets/course.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到正文</a>
-  <noscript><p class="noscript-note">JavaScript 当前不可用：所有增强控件保持禁用，但六章正文、模型手册与来源仍完整可读。</p></noscript>
+  <noscript><p class="noscript-note">JavaScript 当前不可用：所有增强控件保持禁用，但六章正文、12 张静态架构/工程图、文字流程与来源仍完整可读。</p></noscript>
   <header class="site-header">
     <div class="header-row">
       <a class="brand" href="#top">TRANSFORMER / LAB NOTES</a>
@@ -20,7 +20,7 @@
     </div>
     <nav aria-label="课程章节">
       <a href="#lesson-1">01 数据流</a><a href="#lesson-2">02 注意力</a><a href="#lesson-3">03 KV</a>
-      <a href="#lesson-4">04 MoE</a><a href="#lesson-5">05 系统</a><a href="#lesson-6">06 证据</a><a href="#models">模型手册</a>
+      <a href="#lesson-4">04 MoE</a><a href="#lesson-5">05 系统</a><a href="#lesson-6">06 证据</a><a href="#models">模型图谱</a><a href="#systems">工程图</a>
     </nav>
     <progress id="course-progress" class="course-progress" aria-label="课程阅读进度" max="100" value="0">0%</progress>
   </header>
@@ -29,7 +29,8 @@
     <section class="hero" id="top" aria-labelledby="course-title">
       <p class="eyebrow">VISUAL COURSE · EVIDENCE SNAPSHOT 2026-08-20</p>
       <h1 id="course-title">从一个 token，走到一套推理系统</h1>
-      <p class="lede">先建立 Transformer 的形状与数据流，再理解注意力、缓存、MoE 通信和部署口径。最后用六个真实实现检验心智模型，而不是背架构名词。</p>
+      <p class="lede">先建立 Transformer 的形状与数据流，再进入六个真实模型的完整结构图、组件原理与工程通信图。课程负责建立心智模型，图谱负责保留源码级深度；两者不再互相替代。</p>
+      <div class="hero-actions"><a class="primary-link" href="#lesson-1">从六课开始</a><a href="#models">直接看六模型结构图</a><a href="#systems">查看并行与 PD 图</a></div>
       <div class="hero-grid">
         <div><strong>先修</strong><span>基础线性代数、知道张量维度；不要求分布式经验。</span></div>
         <div><strong>学习目标</strong><span>能沿 shape 检查公式，区分算法、reference 源码和部署优化。</span></div>
@@ -165,19 +166,115 @@
     </section>
 
     <section id="models" class="reference" aria-labelledby="models-title">
-      <header class="section-heading"><p class="eyebrow">ENGINEERING REFERENCE</p><h2 id="models-title">六模型证据化案例手册</h2><p>以下内容在无 JavaScript 时完整可读。精确换算统一由上方计算器读取 <code>model-data.js</code>；卡片只解释当前实现边界与关键配置。</p></header>
+      <header class="section-heading"><p class="eyebrow">MODEL ARCHITECTURE ATLAS</p><h2 id="models-title">六模型结构与原理图谱</h2><p>每个模型都恢复完整结构图、可搜索的文字数据流和核心原理卡。图中实线表示当前 config/source 路径；虚线明确标注 optimized、theoretical 或 deployment 边界，不把它们混成一个实现。</p></header>
+      <nav class="model-index" aria-label="六模型图谱索引"><a href="#model-nanogpt">nanoGPT</a><a href="#model-minimind">MiniMind</a><a href="#model-qwen">Qwen3.6</a><a href="#model-glm">GLM-5.2</a><a href="#model-kimi">Kimi-K3</a><a href="#model-deepseek">DeepSeek-V4</a></nav>
 
-      <article class="model-card" id="model-nanogpt"><header><div><span>01 / TEACHING BASELINE</span><h3>nanoGPT</h3></div><a href="#source-nanogpt">查看来源</a></header><p><strong>解决什么：</strong>用最少代码展示 GPT 闭环：embedding、因果 MHA、MLP、残差和语言模型损失。</p><dl><div><dt>关键替换</dt><dd>无 KV cache；绝对位置 embedding；输入输出权重共享。</dd></div><div><dt>训练目标</dt><dd><span class="badge source">源码事实</span> target shift 在数据加载阶段：x 取当前位置，y 取后移一位；模型 forward 直接对齐 logits 与 targets。</dd></div><div><dt>缓存口径</dt><dd>reference 为“没有 cache”；标准 MHA cache 只能标为理论假设。</dd></div></dl></article>
+      <article class="model-card model-dossier" id="model-nanogpt">
+        <header><div><span>01 / TEACHING BASELINE</span><h3>nanoGPT</h3></div><a href="#source-nanogpt">查看来源</a></header>
+        <p><strong>解决什么：</strong>用最少代码展示 GPT 闭环：embedding、因果 MHA、MLP、残差和语言模型损失。</p>
+        <dl><div><dt>规模</dt><dd><span class="badge config">配置值</span> 12 层、hidden 768、12 头 × 64。</dd></div><div><dt>训练目标</dt><dd><span class="badge source">源码事实</span> target shift 在数据加载阶段；forward 直接对齐 logits 与 targets。</dd></div><div><dt>缓存口径</dt><dd>reference 没有 KV cache；每步重跑窗口。</dd></div></dl>
+        <figure class="architecture-figure"><div class="diagram-scroll" role="region" aria-label="nanoGPT 完整结构图，可横向滚动" tabindex="0"><img src="./assets/diagrams/model-nanogpt.svg" width="728" height="1953" loading="lazy" decoding="async" alt="nanoGPT 从 token 和位置 embedding，经十二层 Pre-LN Transformer 到共享语言模型头的结构图"></div><figcaption>nanoGPT reference 主链；红色旁注标明无 KV cache。<a href="./assets/diagrams/model-nanogpt.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>文字数据流</h4><ol><li><code>(B,T)</code> token 与绝对位置 embedding 相加为 <code>(B,T,768)</code>。</li><li>12 个 Pre-LN block 依次执行因果 MHA 和 GELU MLP，两次残差保持外部 shape。</li><li>final LayerNorm 后进入与 token embedding 权重共享的 lm head；推理只投影最后位置。</li></ol></div>
+        <div class="principle-grid" aria-label="nanoGPT 核心原理"><section class="principle-card"><h4>Causal MHA</h4><p>Q/K/V 各为 12 头 × 64，causal mask 禁止读取未来。没有 cache 时每一步都重算窗口，attention 主项为 <code>O(T²)</code>。</p></section><section class="principle-card"><h4>Pre-LN 残差</h4><p>先归一化再进入 attention/MLP，子层输出加回 residual；block 前后都保持 <code>(B,T,768)</code>。</p></section><section class="principle-card"><h4>GELU 与权重共享</h4><p>MLP 为 <code>768→3072→768</code>；输入 embedding 与 lm head tied，减少一份词表矩阵。</p></section><section class="principle-card"><h4>训练边界</h4><p>模型 forward 不执行 label shift；数据加载器负责构造后移一位的 targets。</p></section></div>
+        <details class="evidence-detail"><summary>reference 与理论 cache 边界</summary><p><span class="badge source">源码事实</span> 当前 forward 没有 <code>past_key_values</code>。任何标准 MHA cache 数字都只能标为理论假设，不能写成 nanoGPT 当前占用。</p></details>
+      </article>
 
-      <article class="model-card" id="model-minimind"><header><div><span>02 / MODERN SMALL MODEL</span><h3>MiniMind</h3></div><a href="#source-minimind">查看来源</a></header><p><strong>解决什么：</strong>以教学规模展示 RMSNorm、RoPE、GQA、SwiGLU 与生成 cache。</p><dl><div><dt>关键参数</dt><dd><span class="badge config">配置值</span> 8 层、8 个 Q 头 / 4 个 KV 头；最大位置 32K。</dd></div><div><dt>位置外推</dt><dd>YaRN 默认关闭；只有显式开启 inference rope scaling 才使用该分支。</dd></div><div><dt>缓存口径</dt><dd><span class="badge source">源码事实</span> 保存未 repeat 的 GQA K/V。KV cache 避免历史 K/V 重投影，但 full attention decode 仍随历史线性增长；1M 超出配置。</dd></div></dl></article>
+      <article class="model-card model-dossier" id="model-minimind">
+        <header><div><span>02 / MODERN SMALL MODEL</span><h3>MiniMind</h3></div><a href="#source-minimind">查看来源</a></header>
+        <p><strong>解决什么：</strong>以教学规模展示 RMSNorm、RoPE、GQA、SwiGLU 与真实生成 cache。</p>
+        <dl><div><dt>关键参数</dt><dd><span class="badge config">配置值</span> 8 层、8 Q 头 / 4 KV 头、head dim 96。</dd></div><div><dt>位置边界</dt><dd>最大位置 32K；YaRN 默认关闭。</dd></div><div><dt>缓存口径</dt><dd><span class="badge source">源码事实</span> 保存 repeat 前的 4 头 K/V。</dd></div></dl>
+        <figure class="architecture-figure"><div class="diagram-scroll" role="region" aria-label="MiniMind 完整结构图，可横向滚动" tabindex="0"><img src="./assets/diagrams/model-minimind.svg" width="765" height="2167" loading="lazy" decoding="async" alt="MiniMind 从 embedding，经八层 RMSNorm GQA SwiGLU 与 KV cache 到共享语言模型头的结构图"></div><figcaption>MiniMind 的 GQA cache 写入点与 repeat_kv 顺序；图中明确 YaRN 默认关闭。<a href="./assets/diagrams/model-minimind.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>文字数据流</h4><ol><li><code>(B,T)</code> 经 embedding 得到 <code>(B,T,768)</code>，RoPE 从 past KV 长度继续位置。</li><li>每层 Q 为 8×96，K/V 为 4×96；先把未 repeat 的 K/V 写入 cache，再扩为 8 头参与 attention。</li><li>RMSNorm、GQA 和 SwiGLU 组成 8 层主干；生成循环下一步只传新 token。</li></ol></div>
+        <div class="principle-grid" aria-label="MiniMind 核心原理"><section class="principle-card"><h4>RMSNorm + RoPE</h4><p>RMSNorm 只按均方根缩放；RoPE 在 Q/K 上注入相对位置信息。配置支持 32K，但 YaRN 分支并非默认启用。</p></section><section class="principle-card"><h4>GQA Cache</h4><p>8 个 Q 头共享 4 个 KV 头，cache 保存 <code>(B,T,4,96)</code> 的 K 与 V，attention 计算时才 repeat 两倍。</p></section><section class="principle-card"><h4>SwiGLU</h4><p><code>SiLU(gate) × up</code> 后投影回 hidden，比单路 GELU MLP 多一条可学习门控路径。</p></section><section class="principle-card"><h4>Prefill / Decode</h4><p>cache 避免历史 K/V 重投影，但新 query 仍读取全部历史，因此 full-attention decode 每 token 仍随 T 线性增长。</p></section></div>
+        <details class="evidence-detail"><summary>配置范围与换算</summary><p><span class="badge derived">推导</span> B=1、32K、BF16 reference 为 402,653,184 bytes；1M 超出该配置范围，不作为有效运行示例。</p></details>
+      </article>
 
-      <article class="model-card" id="model-qwen"><header><div><span>03 / HYBRID ATTENTION</span><h3>Qwen3.6-27B</h3></div><a href="#source-qwen">查看来源</a></header><p><strong>解决什么：</strong>用 48 个 Gated DeltaNet 层承接长历史状态，用 16 个全注意力层保留精确检索。</p><dl><div><dt>名称与实现</dt><dd><span class="badge official">官方材料</span> 官方名称确为 Qwen3.6；官方 config 复用 qwen3_5 实现，这不是名称冲突。</dd></div><div><dt>输出</dt><dd><span class="badge config">配置值</span> <code>tie_word_embeddings=false</code>，因此是独立 lm_head。</dd></div><div><dt>缓存口径</dt><dd><span class="badge source">源码事实</span> 需分列全注意力 K/V、FP32 recurrent state 与 combined QKV convolution state；精确 byte 由计算器按 B/T/dtype 推导。</dd></div></dl></article>
+      <article class="model-card model-dossier" id="model-qwen">
+        <header><div><span>03 / HYBRID ATTENTION</span><h3>Qwen3.6-27B</h3></div><a href="#source-qwen">查看来源</a></header>
+        <p><strong>解决什么：</strong>用 48 个 Gated DeltaNet 层压缩长历史状态，用 16 个 Gated GQA 层保留内容寻址，并可融合视觉 token。</p>
+        <dl><div><dt>层布局</dt><dd><span class="badge config">配置值</span> <code>[linear, linear, linear, full] × 16</code>。</dd></div><div><dt>实际宽度</dt><dd>hidden 5120；24 Q / 4 KV；full head dim 256；<code>tie_word_embeddings=false</code>。</dd></div><div><dt>状态口径</dt><dd>GQA KV + FP32 recurrent + combined-QKV conv state。</dd></div></dl>
+        <figure class="architecture-figure"><div class="diagram-scroll diagram-scroll-ultrawide" role="region" aria-label="Qwen3.6-27B 完整结构图，可横向滚动" tabindex="0"><img src="./assets/diagrams/model-qwen.svg" width="3304" height="2259" loading="lazy" decoding="async" alt="Qwen3.6 由四十八层 Gated DeltaNet 和十六层 Gated GQA 混合组成并可接入视觉塔的结构图"></div><figcaption>实际 27B config shape：DeltaNet combined QKV=10240；full q_proj 含 gate=12288。<a href="./assets/diagrams/model-qwen.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>文字数据流</h4><ol><li>文本 embedding 与可选视觉 PatchMerger 都输出 hidden 5120，并使用 MRoPE position embeddings。</li><li>64 层按三层 DeltaNet 加一层 full GQA 重复；每层后接 <code>5120→17408→5120</code> SwiGLU。</li><li>DeltaNet 保存固定 recurrent/conv state；full 层保存随 T 增长的 4 头 GQA K/V；最终使用独立 lm head。</li></ol></div>
+        <div class="principle-grid" aria-label="Qwen3.6 核心原理"><section class="principle-card"><h4>Gated DeltaNet</h4><p>K 16×128、V 48×128，combined QKV 投影为 10240；短卷积混合局部信息，delta rule 把历史更新进 <code>48×128×128</code> FP32 状态。</p></section><section class="principle-card"><h4>Gated GQA</h4><p>Q 投影同时产生 24×256 的 query 与 output gate；4 个 KV 头提供精确内容寻址，6144 宽输出再投影回 5120。</p></section><section class="principle-card"><h4>MRoPE 与视觉</h4><p>视觉塔 hidden 1152、27 blocks，PatchMerger 输出 5120 后替换文本占位 token；纯文本路径不需要视觉输入。</p></section><section class="principle-card"><h4>MTP 边界</h4><p><span class="badge config">配置值</span> 声明一层 MTP；<span class="badge source">源码事实</span> 当前本地 reference 仅忽略相应权重，没有 MTP forward，图中不画成实线路径。</p></section></div>
+        <details class="evidence-detail"><summary>为什么不能只写“线性注意力无 KV”</summary><p>48 层 DeltaNet 确实使用固定 recurrent state，但还存在 convolution state；16 层 full GQA 的 KV 随上下文增长。B=1、1M、BF16 reference 已计小计为 65,690,927,104 bytes。</p></details>
+      </article>
 
-      <article class="model-card" id="model-glm"><header><div><span>04 / MLA + DSA</span><h3>GLM-5.2</h3></div><a href="#source-glm">查看来源</a></header><p><strong>解决什么：</strong>用 MLA 低秩投影与 DSA top-k 降低长上下文计算，并让若干层共享索引结果。</p><dl><div><dt>关键参数</dt><dd><span class="badge config">配置值</span> 78 层；按 indexer_types 仅 21 层实例化 Indexer，其余层复用。</dd></div><div><dt>reference</dt><dd><span class="badge source">源码事实</span> 当前 HF/reference 在 cache update 前把 K/V 展开，因此按展开 K/V shape 计；Indexer key cache 另算。</dd></div><div><dt>optimized</dt><dd><span class="badge derived">推导</span> 576 维 latent cache 属优化/理论口径，不是当前 HF cache 行为。</dd></div></dl></article>
+      <article class="model-card model-dossier" id="model-glm">
+        <header><div><span>04 / MLA + DSA</span><h3>GLM-5.2</h3></div><a href="#source-glm">查看来源</a></header>
+        <p><strong>解决什么：</strong>用 MLA 低秩投影、DSA top-k 和跨层索引复用控制长上下文计算，并用大规模 MoE 扩展参数容量。</p>
+        <dl><div><dt>主干</dt><dd><span class="badge config">配置值</span> 78 层；前 3 层 Dense，后 75 层 MoE。</dd></div><div><dt>Indexer</dt><dd>21 个 full Indexer；57 个 shared 层复用 indices。</dd></div><div><dt>缓存双口径</dt><dd>reference 展开 K/V；576 维 latent 仅 optimized/theoretical。</dd></div></dl>
+        <figure class="architecture-figure"><div class="diagram-scroll diagram-scroll-wide" role="region" aria-label="GLM-5.2 完整结构图，可横向滚动" tabindex="0"><img src="./assets/diagrams/model-glm.svg" width="2185" height="2780" loading="lazy" decoding="async" alt="GLM-5.2 的七十八层 MLA DSA IndexShare 与二百五十六专家 MoE 结构图"></div><figcaption>MLA、DSA/IndexShare 与 MoE 三条子图；红色为 reference 展开 cache，蓝色虚线为理论 latent cache。<a href="./assets/diagrams/model-glm.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>文字数据流</h4><ol><li>hidden 6144 经 Q LoRA 生成 64×256 query；KV 先压到 512+64，再展开为 64 头 K/V。</li><li>21 个 full Indexer 产生 top-2048，后续 57 个 shared 层在层循环中复用 indices；稀疏 mask 约束 MLA attention。</li><li>前 3 层使用 Dense SwiGLU，后 75 层由 256 routed experts top-8 与 1 shared expert 相加。</li></ol></div>
+        <div class="principle-grid" aria-label="GLM-5.2 核心原理"><section class="principle-card"><h4>MLA</h4><p>K/V 先经 512 维 latent；Q/K 各有 64 维 RoPE 部分。当前 HF/reference cache update 前已经展开 K/V，因此不能用 576 维当 reference。</p></section><section class="principle-card"><h4>DSA</h4><p>Indexer 用低维 key 与 query 计算 ReLU score，再选择 top-2048 历史位置；这是稀疏计算选择，不自动等于压缩 cache。</p></section><section class="principle-card"><h4>IndexShare</h4><p>full 层计算 top-k，shared 层复用上一结果。源码证明跨层复用，但不能据此宣称“唯一原创”，也不能画成 reference GPU broadcast。</p></section><section class="principle-card"><h4>MoE</h4><p>256 routed experts 取 top-8，另有 1 个 shared expert。参数稀疏不意味着激活通信可以忽略。</p></section></div>
+        <details class="evidence-detail"><summary>reference 与 optimized 显存差异</summary><p><span class="badge derived">推导</span> B=1、1M、BF16：reference 展开路径 5,117,184,000,000 bytes；optimized/theoretical 576 维路径 95,232,000,000 bytes。两者不可混写。</p></details>
+      </article>
 
-      <article class="model-card" id="model-kimi"><header><div><span>05 / LINEAR + MULTIMODAL MOE</span><h3>Kimi-K3</h3></div><a href="#source-kimi">查看来源</a></header><p><strong>解决什么：</strong>以 KDA 递归状态覆盖多数层，以 Gated MLA 保留全局注意力，并组合超大 MoE 与视觉输入。</p><dl><div><dt>层与视觉</dt><dd><span class="badge official">官方材料</span> 首层 Dense、其余 92 层 MoE；视觉塔官方参数量 401M。</dd></div><div><dt>reference</dt><dd><span class="badge source">源码事实</span> 当前官方 HF/reference cache 拼接展开后的 K/V；精确 byte 由计算器推导。</dd></div><div><dt>optimized</dt><dd><span class="badge derived">推导</span> 优化/理论口径仍需保存 512 维 latent 与参与 key 的 64 维 remainder，共 576 维；KDA recurrent/conv 未完整计量时只显示小计。</dd></div></dl></article>
+      <article class="model-card model-dossier" id="model-kimi">
+        <header><div><span>05 / LINEAR + MULTIMODAL MOE</span><h3>Kimi-K3</h3></div><a href="#source-kimi">查看来源</a></header>
+        <p><strong>解决什么：</strong>以 KDA 递归状态覆盖多数层，以无 RoPE 的 Gated MLA 保留全局 attention，并组合 AttnRes、LatentMoE 与视觉输入。</p>
+        <dl><div><dt>层布局</dt><dd><span class="badge config">配置值</span> 93 层：69 KDA + 24 MLA。</dd></div><div><dt>专家</dt><dd>首层 Dense；其余 92 层 896 experts top-16 + 2 shared。</dd></div><div><dt>缓存完整性</dt><dd>MLA 可换算；KDA 外部 state dtype/layout 证据不完整。</dd></div></dl>
+        <figure class="architecture-figure"><div class="diagram-scroll diagram-scroll-ultrawide" role="region" aria-label="Kimi-K3 完整结构图，可横向滚动" tabindex="0"><img src="./assets/diagrams/model-kimi.svg" width="3066" height="3119" loading="lazy" decoding="async" alt="Kimi-K3 的六十九层 KDA、二十四层无 RoPE Gated MLA、AttnRes、LatentMoE 和视觉塔结构图"></div><figcaption>KDA、MLA、AttnRes、LatentMoE 与 MoonViT 的完整路径；未知状态保持显式未计。<a href="./assets/diagrams/model-kimi.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>文字数据流</h4><ol><li>文本和 MoonViT 特征统一为 hidden 7168，进入 93 层混合主干。</li><li>69 层 KDA 用 96×128 recurrent state 和三组 short-conv state；24 层 MLA 使用 Q 96×192、K 96×192、V 96×128。</li><li>AttnRes 在层 0、12…84 共 push 8 次；首层 Dense，其余层经 3584 latent 空间路由 896 experts。</li></ol></div>
+        <div class="principle-grid" aria-label="Kimi-K3 核心原理"><section class="principle-card"><h4>KDA</h4><p>Q/K/V 各先过 kernel=4 ShortConv，再由 delta rule 更新固定 recurrent state；存在状态不等于已经获得精确 byte 证据。</p></section><section class="principle-card"><h4>Gated MLA</h4><p><code>rotary_emb=None</code>，不执行 RoPE。reference 保存展开 K/V；optimized 仍需 512 latent 加参与 key 的 64 remainder，共 576 维。</p></section><section class="principle-card"><h4>AttnRes</h4><p>每 12 层维护 block residual，通过归一化、打分和 softmax 加权汇合；触发包含 layer 0，因此是 8 次而非 7 次。</p></section><section class="principle-card"><h4>LatentMoE</h4><p>router 在 7168 hidden 上选 top-16，routed 路径先降到 3584 再进入专家，最后升回 7168 与 shared experts 相加。</p></section><section class="principle-card"><h4>视觉与 MTP</h4><p>MoonViT-V2 投影到 7168；<code>num_nextn_predict_layers=0</code>，不能在结构图里画内置 MTP。</p></section></div>
+        <details class="evidence-detail"><summary>为什么 KDA 不能写成精确 217MB</summary><p>本地源码能证明 recurrent 与 q/k/v convolution state 存在，但外部 FLA state 的完整 dtype/layout 证据不足。因此 1M reference 与 optimized 数值都只显示 MLA 已计小计，并明确 KDA 未计项。</p></details>
+      </article>
 
-      <article class="model-card" id="model-deepseek"><header><div><span>06 / COMPRESSED SPARSE ATTENTION</span><h3>DeepSeek-V4-Flash-0731</h3></div><a href="#source-deepseek">查看来源</a></header><p><strong>解决什么：</strong>把 43 层主干分配给滑窗、4 倍与 128 倍压缩历史，以单 KV 头和稀疏选择控制长上下文成本。</p><dl><div><dt>压缩分布</dt><dd><span class="badge config">配置值</span> 主干为 2 个 ratio=0、21 个 ratio=4、20 个 ratio=128。</dd></div><div><dt>cache</dt><dd><span class="badge source">源码事实</span> reference buffer 按运行时 max_seq_len/max_batch_size 预分配；attention core 与 FP32 Compressor state 分列，Indexer cache 单列。<span class="badge deployment">部署假设</span> 官方示例组合为 core FP8 与 Indexer raw FP4 payload；量化小计不含 scale/metadata 与 packing/alignment。</dd></div><div><dt>DSpark</dt><dd>HF 主 config、三层 inference 快照与 vLLM 的 7 speculative tokens 分属不同入口，见课程版本边界。</dd></div></dl></article>
+      <article class="model-card model-dossier" id="model-deepseek">
+        <header><div><span>06 / COMPRESSED SPARSE ATTENTION</span><h3>DeepSeek-V4-Flash-0731</h3></div><a href="#source-deepseek">查看来源</a></header>
+        <p><strong>解决什么：</strong>以 MQA、滑窗和压缩稀疏历史控制 1M 上下文成本，再用 mHC、MoE 与版本化 DSpark 组合推理。</p>
+        <dl><div><dt>主干分布</dt><dd><span class="badge config">配置值</span> 43 层：ratio 0/4/128 分别 2/21/20。</dd></div><div><dt>注意力</dt><dd>64 Q heads × 512；单 512 维 MQA KV projection。</dd></div><div><dt>版本边界</dt><dd>HF next-n=1、inference MTP=3、vLLM 7 tokens 分属不同入口。</dd></div></dl>
+        <figure class="architecture-figure"><div class="diagram-scroll diagram-scroll-wide" role="region" aria-label="DeepSeek-V4 完整结构图，可横向滚动" tabindex="0"><img src="./assets/diagrams/model-deepseek.svg" width="1984" height="3228" loading="lazy" decoding="async" alt="DeepSeek-V4 的四副本 mHC、四十三层压缩稀疏注意力、单头 KV、MoE 和独立 DSpark 版本路径结构图"></div><figcaption>主干、mHC、CSA/HCA、MoE 与 DSpark 采用分 lane 表达，避免混淆三个入口。<a href="./assets/diagrams/model-deepseek.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>文字数据流</h4><ol><li>hidden 4096 展开为 4 份，43 个 block 分别在 attention 与 FFN 前后由 mHC 混合残差。</li><li>Q 为 64×512，KV 为单 512 投影；2 层只看 window 128，21 层 ratio=4 配 Indexer，20 层 ratio=128 使用压缩历史。</li><li>MoE 选择 256 routed experts 中 top-6 并加 1 shared expert；DSpark 作为独立版本路径注入主干后段。</li></ol></div>
+        <div class="principle-grid" aria-label="DeepSeek-V4 核心原理"><section class="principle-card"><h4>CSA / HCA</h4><p>ratio=4 使用 overlap compressor 与 top-512 Indexer；ratio=128 使用 non-overlap 压缩位置。稀疏计算、预分配 cache 与部署量化是三个不同问题。</p></section><section class="principle-card"><h4>MQA</h4><p>64 个 query heads 共享单个 512 维 K/V projection，RoPE 只作用于最后 64 维；reference 仍按实际预分配 buffer 计量。</p></section><section class="principle-card"><h4>mHC</h4><p>hc_pre 的 4×4 mixing matrix 做 20 次 Sinkhorn；hc_post 把新输出与四份 residual 混合。最终 hc_head 使用 sigmoid，不是 Sinkhorn。</p></section><section class="principle-card"><h4>MoE 与 FP4</h4><p>sqrtsoftplus router 选 top-6。FP4 描述专家权重格式，不会自动把 BF16/FP8 activation 通信减半。</p></section><section class="principle-card"><h4>DSpark</h4><p>inference 快照为 3 blocks、block_size=5、注入层 40–42；官方 vLLM 的 7 speculative tokens 是部署参数，不能合并成同一个数字。</p></section></div>
+        <details class="evidence-detail"><summary>reference 与 deployment 小计</summary><p><span class="badge derived">推导</span> B=1、1M reference 为 6,897,831,936 bytes，attention core、FP32 Compressor state 与 Indexer cache 单列；mixed deployment raw subtotal 为 3,119,019,008 bytes，后者未计 scale、metadata、packing/alignment，不能称完整总量。</p></details>
+      </article>
+    </section>
+
+    <section id="systems" class="systems" aria-labelledby="systems-title">
+      <header class="section-heading"><p class="eyebrow">SYSTEMS &amp; COMMUNICATION ATLAS</p><h2 id="systems-title">并行、专家路由与 PD 分离</h2><p>以下六图恢复旧版工程视角，但不再把某个 runtime 拓扑冒充模型源码。实线表示本地 reference 可证路径；虚线表示 TP/EP/PD 部署选择。通信数字是 payload 下限，不是 wire traffic 或实测延迟。</p></header>
+      <nav class="model-index" aria-label="工程图索引"><a href="#system-overview">总体边界</a><a href="#system-glm">GLM</a><a href="#system-kimi">Kimi</a><a href="#system-deepseek">DeepSeek</a><a href="#system-qwen">Qwen</a><a href="#system-pd">PD 分离</a></nav>
+
+      <article class="system-card" id="system-overview">
+        <header><span>01 / RUNTIME BOUNDARIES</span><h3>总体集群与并行边界</h3></header>
+        <p>模型计算图只决定可切分的张量；TP collective、EP dispatch/combine、Prefill/Decode 池和网络拓扑属于运行时。图中不固定 GPU 型号、带宽或微秒延迟。</p>
+        <figure class="architecture-figure"><div class="diagram-scroll diagram-scroll-wide" role="region" aria-label="总体集群与并行边界图，可横向滚动" tabindex="0"><img src="./assets/diagrams/system-overview.svg" width="1714" height="567" loading="lazy" decoding="async" alt="请求经过 Prefill、cache state 迁移和 Decode，并在旁路标出 TP 与专家并行运行时边界的工程图"></div><figcaption>Request → Prefill → cache/state manifest → Decode；collective 和专家路由单独标为部署边界。<a href="./assets/diagrams/system-overview.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>读取方法</h4><ol><li>先确定模型实际产生哪些 KV、recurrent、convolution 或 compressor state。</li><li>再选择 TP/EP/PD 拓扑；模型配置本身不能推出 collective、有效带宽或端到端延迟。</li><li>任何时间估计都必须给出 bytes、单位、效率和未计开销。</li></ol></div>
+      </article>
+
+      <article class="system-card" id="system-glm">
+        <header><span>02 / GLM DEPLOYMENT VIEW</span><h3>GLM-5.2 · MLA / IndexShare / MoE</h3></header>
+        <p>HF/reference 没有实现这里的分布式 EP。full Indexer 产生的 <code>topk_indices</code> 是层间张量复用，不是源码中的 GPU broadcast；EP 只作为带公式的部署假设。</p>
+        <figure class="architecture-figure"><div class="diagram-scroll" role="region" aria-label="GLM-5.2 TP EP 部署示意图，可横向滚动" tabindex="0"><img src="./assets/diagrams/system-glm-tp-ep.svg" width="1175" height="1002" loading="lazy" decoding="async" alt="GLM-5.2 从 MLA 和跨层索引复用到 top-8 MoE，并以虚线标出可选专家并行的工程图"></div><figcaption>可证层间数据流用实线；可选 EP dispatch/combine 用虚线。<a href="./assets/diagrams/system-glm-tp-ep.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>通信口径</h4><p><span class="badge deployment">部署假设</span> 单向远端 routed payload 下限为 <code>B × S × 6144 × 8 × activation_bytes × remote_fraction</code>。dispatch 与 combine 应分列，不能漏掉 top-k 或远端比例。</p></div>
+      </article>
+
+      <article class="system-card" id="system-kimi">
+        <header><span>03 / KIMI DEPLOYMENT VIEW</span><h3>Kimi-K3 · 混合注意力与 LatentMoE</h3></header>
+        <p>当前 reference 为 <code>ep_size=1</code>。只有 runtime 确实在 down projection 后 dispatch，网络 payload 才能用 3584 latent 维；这是一项条件明确的部署选择。</p>
+        <figure class="architecture-figure"><div class="diagram-scroll" role="region" aria-label="Kimi-K3 TP EP 部署示意图，可横向滚动" tabindex="0"><img src="./assets/diagrams/system-kimi-tp-ep.svg" width="1268" height="1133" loading="lazy" decoding="async" alt="Kimi-K3 混合注意力、AttnRes、LatentMoE 降维路径和可选专家并行边界工程图"></div><figcaption>router 在 7168 hidden 上选 top-16；routed 路径降到 3584，shared experts 保持 7168。<a href="./assets/diagrams/system-kimi-tp-ep.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>通信口径</h4><p><span class="badge deployment">部署假设</span> 若 down projection 后 dispatch，单向 payload 下限为 <code>B × S × 3584 × 16 × activation_bytes × remote_fraction</code>。KDA state 精确 bytes 仍为未知，不能恢复旧版 217MB 定值。</p></div>
+      </article>
+
+      <article class="system-card" id="system-deepseek">
+        <header><span>04 / DEEPSEEK REFERENCE COLLECTIVES</span><h3>DeepSeek-V4 · TP、Indexer 与专家分片</h3></header>
+        <p>这一图优先画官方 inference reference 的实际 collective：Indexer score 和 rank-local expert output 都执行 <code>dist.all_reduce</code>。AllToAll EP 只作为其他 runtime 可能采用的虚线替代。</p>
+        <figure class="architecture-figure"><div class="diagram-scroll" role="region" aria-label="DeepSeek-V4 reference collective 工程图，可横向滚动" tabindex="0"><img src="./assets/diagrams/system-deepseek-tp-ep.svg" width="1183" height="1085" loading="lazy" decoding="async" alt="DeepSeek-V4 的 mHC、Q 分片、MQA KV、Indexer all-reduce 和专家输出 all-reduce 工程图"></div><figcaption>reference expert-sharded + all-reduce 与 deployment AllToAll 明确分层。<a href="./assets/diagrams/system-deepseek-tp-ep.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>关键纠错</h4><ol><li>MQA KV 使用非并行 Linear，reference rank 上重复计算/保存；不能简单写成“KV 无通信所以免费”。</li><li>Indexer local scores 需 all-reduce 后形成 global top-k。</li><li>FP4 专家权重格式不会自动减少 activation collective。</li></ol></div>
+      </article>
+
+      <article class="system-card" id="system-qwen">
+        <header><span>05 / QWEN TP PLAN</span><h3>Qwen3.6 · 混合层状态与 TP</h3></header>
+        <p>Transformers TP plan 混合 colwise、rowwise 与 gather output；旧版固定“每 GPU 24 recurrent heads、out_proj 后一次 AllReduce”没有足够证据，因此改为 projection 级边界。</p>
+        <figure class="architecture-figure"><div class="diagram-scroll diagram-scroll-wide" role="region" aria-label="Qwen3.6 TP 与状态工程图，可横向滚动" tabindex="0"><img src="./assets/diagrams/system-qwen-tp.svg" width="1882" height="789" loading="lazy" decoding="async" alt="Qwen3.6 三线性一全注意力重复组、recurrent convolution KV 状态和张量并行边界工程图"></div><figcaption>48 层固定 recurrent/conv state 与 16 层增长 GQA KV 分开显示。<a href="./assets/diagrams/system-qwen-tp.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>状态口径</h4><p><span class="badge source">源码事实</span> recurrent state 单独已是 <code>48 × 48 × 128 × 128 × 4</code> bytes（B=1）；还要加 convolution state 和 full GQA KV，因此旧版约 25 MB 的定值错误。</p></div>
+      </article>
+
+      <article class="system-card" id="system-pd">
+        <header><span>06 / PREFILL-DECODE</span><h3>PD 分离 · 迁移的是具名组件</h3></header>
+        <p>PD 边界迁移的不是抽象“上下文”，而是当前实现实际维护的 KV、recurrent、conv、Indexer 与 compressor state。下图把 reference、optimized 和 deployment subtotal 分 lane。</p>
+        <figure class="architecture-figure"><div class="diagram-scroll diagram-scroll-ultrawide" role="region" aria-label="六模型 PD 分离状态迁移图，可横向滚动" tabindex="0"><img src="./assets/diagrams/system-pd.svg" width="2628" height="404" loading="lazy" decoding="async" alt="Prefill 到 Decode 的状态迁移清单，列出六模型 reference optimized deployment 数值及完整性边界"></div><figcaption>数值为 B=1 的 decimal GB；MiniMind 使用配置内 32K，其余 1M 口径见图。<a href="./assets/diagrams/system-pd.svg">打开原图</a></figcaption></figure>
+        <div class="diagram-transcript"><h4>不能做的比较</h4><p><code>lower_bound = bytes / (bandwidth × unit conversion × efficiency)</code> 只给单向 payload 下限；不含协议、拥塞、序列化、并发、重试和拓扑。Kimi 与 DeepSeek deployment 是不完整小计，不能据此给“最快”排名。</p></div>
+      </article>
     </section>
 
     <section id="comparison" class="reference-table" aria-labelledby="comparison-title">

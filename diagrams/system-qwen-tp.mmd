@@ -1,0 +1,32 @@
+flowchart TB
+  H["hidden<br/>B × S × 5120"]:::input --> GROUP["repeating layer group ×16<br/>linear · linear · linear · full"]:::source
+
+  subgraph LINEAR["Gated DeltaNet lanes · 48 layers"]
+    direction LR
+    LPROJ["combined QKV + gates<br/>runtime TP plan"]:::source --> LCONV["Conv1d state"]:::state --> LREC["FP32 recurrent state<br/>48 heads × 128 × 128"]:::state --> LOUT["output projection"]:::source
+  end
+
+  subgraph FULL["Gated GQA lanes · 16 layers"]
+    direction LR
+    Q["24 Q heads × 256"]:::source --> GQA["GQA attention"]:::source --> OP["o_proj 6144 → 5120"]:::source
+    KV["4 KV heads × 256<br/>growing KV cache"]:::state --> GQA
+  end
+
+  GROUP --> LINEAR
+  GROUP --> FULL
+  LOUT --> MLP["SwiGLU + residual"]:::source
+  OP --> MLP
+  MLP --> OUT["B × S × 5120"]:::output
+
+  TP["Transformers TP plan mixes colwise,<br/>rowwise and gathered projections"]:::deploy -.-> LINEAR
+  TP -.-> FULL
+  NOFIXED["do not infer a fixed 24-head-per-GPU layout<br/>or a single unconditional AllReduce"]:::warn -.-> TP
+  STATE_SUM["reference state includes GQA KV<br/>+ recurrent + convolution states"]:::note -.-> OUT
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef state fill:#352c43,stroke:#d5aaff,color:#faf5ff;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef deploy fill:#3d3425,stroke:#ffb86b,color:#fff9ec,stroke-dasharray:5 4;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef note fill:#263856,stroke:#83b7ff,color:#f4f7fa;

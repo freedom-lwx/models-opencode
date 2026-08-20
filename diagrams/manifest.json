@@ -1,0 +1,80 @@
+{
+  "renderer": {
+    "mermaidCli": "--check",
+    "svgo": "unknown"
+  },
+  "files": [
+    {
+      "name": "model-deepseek",
+      "sourceSha256": "7cbdbbd53e76d3af9eb1ded28b4439dcf2a020a3a814e79c578597b24a3cb6cf",
+      "svgSha256": "60b9bb9e4f6ceb8c72b909aef6e62cb5bec83d36d635a999a2b2a6631ce80a53",
+      "viewBox": "0 0 1984.344 3228"
+    },
+    {
+      "name": "model-glm",
+      "sourceSha256": "9c2f1f98f45b900e8b99159a1ae120690364ae62f2063e73901e1f118243031c",
+      "svgSha256": "d4b9aa922442bab4c4612b91a6a46700692b9abd293c391321fd0f1462608853",
+      "viewBox": "0 0 2184.582 2779.984"
+    },
+    {
+      "name": "model-kimi",
+      "sourceSha256": "33dd2d2e73c06a88fd10cf3029be410fdf362f2c25ed85e522d0a0dccc1cc6e5",
+      "svgSha256": "c91d2926b69a8758a325d150b2a53724a64b7214aab2ffc8fcc0b22b578bce6c",
+      "viewBox": "0 0 3065.887 3119.469"
+    },
+    {
+      "name": "model-minimind",
+      "sourceSha256": "5af65a6f3004ea2388985a3d987ce33afe1093b6b4c707da0cb5bcc503385531",
+      "svgSha256": "922de320e47ece6cb0a3835e100c215c7765acfef03e28597155bef1b52eb18a",
+      "viewBox": "0 0 764.859 2167"
+    },
+    {
+      "name": "model-nanogpt",
+      "sourceSha256": "5db314111f652b979480a5f08a00eaa553cd93eb4db7061bc18b01706b8bbefc",
+      "svgSha256": "0085245512e32d4d5ef8a05254521e7252c83bb154b585a134f532fc4e05b017",
+      "viewBox": "0 0 728.199 1953"
+    },
+    {
+      "name": "model-qwen",
+      "sourceSha256": "e46121f40f274615fba77d3cb0250537f9843ccba52b393473b77841bd65c90e",
+      "svgSha256": "f3edee89c9e53098e8767cbf8eaee6cc88a75b0c093408db6189818eba624d19",
+      "viewBox": "0 0 3304.059 2259.391"
+    },
+    {
+      "name": "system-deepseek-tp-ep",
+      "sourceSha256": "b327fba3db1b029971b685ab42d86a5427aab4e8105de9df47f0ee0116385195",
+      "svgSha256": "3d430552256765ff3d148ccc9b04fd8e210ba98374fa258f6aa900ce41141ffa",
+      "viewBox": "0 0 1182.703 1084.5"
+    },
+    {
+      "name": "system-glm-tp-ep",
+      "sourceSha256": "af6f933c110c3786f07aa651d0054508a863ea20c52eba897c8a2251fbf2eb5e",
+      "svgSha256": "0a36f2e692d0fc45f3cf2fb8b1c9066674cd780abefb19f2f2cf367630324c5a",
+      "viewBox": "0 0 1174.84 1001.5"
+    },
+    {
+      "name": "system-kimi-tp-ep",
+      "sourceSha256": "80b3200458de3faf7f70987016b50acb135f00ec9c3d87f482933b80cad74593",
+      "svgSha256": "52067e8487144c3e3c4daeb63c6c28438e78e987ceb4b4acb699aa6ee177f9e9",
+      "viewBox": "0 0 1267.691 1132.5"
+    },
+    {
+      "name": "system-overview",
+      "sourceSha256": "02b5c7285a7be72a8a9d01481f6728ca6f2d3a5ba2c8363cd2a608ec902621fa",
+      "svgSha256": "2d74064273eb2187ee6291ac0a5324dfce4720c3121ec32f8ef3ac062e789130",
+      "viewBox": "0 0 1714.406 566.5"
+    },
+    {
+      "name": "system-pd",
+      "sourceSha256": "010d625de510f322784e353b6c7d33d70f3744ad500b469227ce4b4b9075ba2e",
+      "svgSha256": "1039e672555e139ad5689df1a304cbbbc317e813665ce29903607d00e507d908",
+      "viewBox": "0 -32.5 2628.484 404"
+    },
+    {
+      "name": "system-qwen-tp",
+      "sourceSha256": "1d954e48e7f4d41b6112741f6ae52d88ba51af1403025cb2dfb7f498625e5e46",
+      "svgSha256": "3e7aefcd42eabb167a57757f4969dfc63cf2399014ff12e097059626c9cd42c7",
+      "viewBox": "0 0 1881.797 789"
+    }
+  ]
+}

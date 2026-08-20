@@ -1,0 +1,30 @@
+flowchart TB
+  H["hidden<br/>B × S × 7168"]:::input
+  H --> MIX["93-layer mixed stack<br/>69 KDA · 24 Gated MLA"]:::source
+  MIX --> ATTRES["AttnRes<br/>block size 12"]:::source
+  ATTRES --> ROUTER["router on 7168 hidden<br/>896 experts · top-16"]:::source
+  ROUTER --> DOWN["routed path down projection<br/>7168 → 3584"]:::source
+  DOWN --> EXPERT["latent routed experts<br/>3584 space"]:::source --> UP["up projection<br/>3584 → 7168"]:::source
+  H --> SHARED["2 shared experts<br/>7168 path"]:::source
+  UP --> SUM["routed + shared"]:::source
+  SHARED --> SUM
+  SUM --> OUT["B × S × 7168"]:::output
+
+  subgraph EP["Optional EP deployment"]
+    direction LR
+    DISPATCH["dispatch after down projection<br/>only if runtime chooses this boundary"]:::deploy --> SHARDS["expert shards"]:::deploy --> COMBINE["combine"]:::deploy
+  end
+  DOWN -.-> DISPATCH
+  COMBINE -.-> UP
+
+  FORMULA["conditional one-way payload<br/>B × S × 3584 × 16 × activation_bytes × remote_fraction"]:::note -.-> DISPATCH
+  REF["current reference ep_size = 1<br/>no EP collective in this path"]:::warn -.-> EP
+  KSTATE["KDA recurrent + three conv states<br/>exact external dtype / layout incomplete"]:::state -.-> MIX
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef state fill:#352c43,stroke:#d5aaff,color:#faf5ff;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef deploy fill:#3d3425,stroke:#ffb86b,color:#fff9ec,stroke-dasharray:5 4;
+  classDef note fill:#263856,stroke:#83b7ff,color:#f4f7fa;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;

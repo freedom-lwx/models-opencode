@@ -1,12 +1,12 @@
-# Transformer 原理可视化课程 · 六模型证据手册
+# Transformer 原理可视化课程 · 六模型结构图谱
 
-这是一个可直接由 GitHub Pages 发布的静态课程：面向初学者讲清 Transformer 数据流、注意力、KV Cache、MoE 与推理系统，同时提供面向工程师的六模型 reference 手册。
+这是一个可直接由 GitHub Pages 发布的静态课程：面向初学者讲清 Transformer 数据流、注意力、KV Cache、MoE 与推理系统，同时为工程师保留 6 张完整模型结构图、26 张组件原理卡和 6 张并行/通信/PD 工程图。
 
 ## 课程入口
 
 - 在线入口：仓库启用 Pages 后访问站点根路径。
 - 本地入口：启动静态服务器后打开 <http://localhost:4173/>。
-- 无 JavaScript 时静态正文、六章课程、模型手册与来源仍完整可读；增强控件保持禁用。JavaScript 只负责主题、进度、练习和计算器。
+- 无 JavaScript 时静态正文、六章课程、12 张静态 SVG、12 份文字数据流与来源仍完整可读；增强控件保持禁用。JavaScript 只负责主题、进度、练习和计算器。
 
 ## 学习路径
 
@@ -17,7 +17,7 @@
 5. TP / EP / PD 分离与推测解码口径
 6. 官方材料、源码、配置、推导和部署假设的证据边界
 
-案例手册覆盖 nanoGPT、MiniMind、Qwen3.6-27B、GLM-5.2、Kimi-K3 与 DeepSeek-V4-Flash-0731。
+模型图谱覆盖 nanoGPT、MiniMind、Qwen3.6-27B、GLM-5.2、Kimi-K3 与 DeepSeek-V4-Flash-0731。每个模型同时提供可见结构图、HTML 文字流程、核心原理卡及 reference / optimized / deployment 边界；工程区恢复总体集群、GLM、Kimi、DeepSeek、Qwen 和 PD 分离六图。
 
 ## 证据等级
 
@@ -51,12 +51,14 @@ git diff --check
 
 ```text
 docs/
-├── index.html                 # 无 JS 仍完整可读的课程与模型手册
+├── index.html                 # 课程、六模型图谱与六张工程图
 └── assets/
+    ├── diagrams/              # 12 张离线生成、静态安全扫描后的 SVG
     ├── model-data.js          # 六模型规格、cache 结构、来源和 revision
     ├── calculators.js         # cache / 状态 / 通信纯函数
     ├── course.js              # 渐进增强交互
-    └── course.css             # 主题、响应式与无障碍样式
+    └── course.css             # 主题、图容器、响应式与无障碍样式
+diagrams/                      # 12 张 SVG 的可维护 Mermaid 源，仅用于离线渲染
 tests/
 ├── calculators.test.mjs       # 数字和口径回归测试
 └── site.test.mjs              # HTML/CSS/JS 行为契约
@@ -67,7 +69,8 @@ scripts/check-site.mjs         # 零依赖静态检查
 
 ## 维护规则与范围边界
 
-- `model-data.js` 是交互计算的结构化规格与来源入口，`calculators.js` 是 byte 公式入口。为保证无 JavaScript 可读，静态正文会保留必要的定性说明与少量关键配置；测试负责防止它们与计算契约冲突。
+- `model-data.js` 是交互计算的结构化规格与来源入口，`calculators.js` 是 byte 公式入口。为保证无 JavaScript 可读，静态正文、图注和文字数据流会保留必要的 shape 与配置；测试负责防止它们与计算契约冲突。
+- `diagrams/*.mmd` 是可维护图源，`docs/assets/diagrams/*.svg` 是离线产物。部署不运行 Mermaid，也不加载 Mermaid CDN；`diagrams/manifest.json` 用 SHA-256 绑定源与产物。门禁要求恰好 12 张本地图，并扫描 script、事件属性、外链、`foreignObject`、viewBox、固有宽高、暗色 subgraph 和独立资源预算。
 - 静态正文不复制精确 fallback byte 结果；新增实现模式必须声明 `supportedModes`，并标明 `reference`、`theoretical` 或 `deployment-assumption`。FP8/FP4 未计 scale、metadata 与对齐时只能显示 raw payload 小计，不能称完整总量。
 - 通信必须区分 Gb/s 与 GB/s，并说明有效带宽、top-k 激活复制和未计入的开销。
 - 本轮只校准静态课程与模型数据模块。`arch_*.md`、`FULL_ANALYSIS.md` 和模型实现源码尚未按同一数据源完整同步，可能保留旧口径；阅读长篇报告时应优先以课程证据快照和对应官方源码为准。

@@ -1,0 +1,25 @@
+flowchart LR
+  PREFILL["Prefill<br/>build cache and recurrent state"]:::source --> MANIFEST["component manifest<br/>scope · dtype · completeness"]:::state --> DECODE["Decode<br/>continue generation"]:::source
+
+  subgraph COMPONENTS["B=1 · 1M tokens unless noted · decimal GB"]
+    direction TB
+    NANO["nanoGPT<br/>reference has no KV cache<br/>reruns window"]:::note
+    MINI["MiniMind at configured 32K<br/>reference BF16: 0.403 GB"]:::note
+    QWEN["Qwen reference<br/>GQA KV + FP32 recurrent + conv<br/>65.691 GB"]:::complete
+    GLM["GLM reference expanded: 5117.184 GB<br/>optimized latent: 95.232 GB"]:::complete
+    KIMI["Kimi reference expanded: 1474.560 GB<br/>optimized 512+64: 27.648 GB<br/>both incomplete: KDA state uncounted"]:::incomplete
+    DS["DeepSeek reference: 6.898 GB<br/>mixed deployment raw subtotal: 3.119 GB<br/>metadata / packing uncounted"]:::incomplete
+  end
+
+  MANIFEST --> COMPONENTS
+  COMPONENTS --> DECODE
+  FORMULA["transfer lower bound = bytes ÷ effective bandwidth<br/>unit conversion and efficiency are explicit inputs"]:::deploy -.-> MANIFEST
+  LIMIT["not included: protocol, congestion, serialization,<br/>concurrency, retries, topology · no fastest ranking"]:::warn -.-> DECODE
+
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef state fill:#352c43,stroke:#d5aaff,color:#faf5ff;
+  classDef note fill:#263856,stroke:#83b7ff,color:#f4f7fa;
+  classDef complete fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef incomplete fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef deploy fill:#3d3425,stroke:#ffb86b,color:#fff9ec,stroke-dasharray:5 4;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;

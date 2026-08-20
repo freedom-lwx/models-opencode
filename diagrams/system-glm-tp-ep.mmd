@@ -1,0 +1,29 @@
+flowchart TB
+  H["hidden<br/>B × S × 6144"]:::input
+  H --> MLA["MLA + DSA<br/>64 heads × 256"]:::source
+  FULL["21 full Indexers<br/>produce top-2048 indices"]:::source --> REUSE["57 shared layers<br/>reuse tensor in layer loop"]:::source --> MLA
+  MLA --> MOE["Router<br/>256 routed experts · top-8"]:::source
+  MOE --> ROUTED["routed expert outputs"]:::source
+  H --> SHARED["1 shared expert"]:::source
+  ROUTED --> SUM["routed + shared"]:::source
+  SHARED --> SUM
+  SUM --> OUT["residual output<br/>B × S × 6144"]:::output
+
+  subgraph DEPLOY["Optional EP deployment · not implemented by HF reference"]
+    direction LR
+    D["dispatch remote activations"]:::deploy --> E["expert shards"]:::deploy --> C["combine outputs"]:::deploy
+  end
+  MOE -.-> D
+  C -.-> ROUTED
+
+  PAYLOAD["one-way remote payload lower bound<br/>B × S × 6144 × 8 × activation_bytes × remote_fraction"]:::note -.-> D
+  NOBCAST["IndexShare is layer-to-layer tensor reuse<br/>no reference GPU broadcast is evidenced"]:::warn -.-> REUSE
+  CACHE["reference expanded K/V<br/>optimized 576-dim latent is a separate path"]:::state -.-> MLA
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef state fill:#352c43,stroke:#d5aaff,color:#faf5ff;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef deploy fill:#3d3425,stroke:#ffb86b,color:#fff9ec,stroke-dasharray:5 4;
+  classDef note fill:#263856,stroke:#83b7ff,color:#f4f7fa;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;

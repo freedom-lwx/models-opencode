@@ -29,6 +29,8 @@
 - [x] T13 UX/无障碍独立复核（父会话完成并综合问题）
 - [x] T14 代码质量/性能独立复核（父会话完成并综合问题）
 - [x] T15 修复评审问题并完成最终验证
+- [x] T16 纠正信息架构偏差：恢复 6 张模型结构图、26 张原理卡与 6 张工程图
+- [x] T17 将 Mermaid 仅用于离线图源，部署静态 SVG；补齐文字流程、移动滚动与安全门禁
 - [x] 写入者实现后自检（不替代独立审查）
 
 ## 最终验证
@@ -40,6 +42,7 @@
 - [x] 无第三方运行时请求（静态扫描）
 - [x] 无 JavaScript 时正文完整可读（结构测试 + Chrome 禁用 JS 实测）
 - [x] Chrome 151 + Playwright：交互、键盘、hash/history、持久化、320/480/1440px 与截图检查通过
+- [x] 12 张 SVG 全部解码；320px 图容器可键盘横向滚动且页面级溢出为 0；无 JS 仍有 12 图与 12 份文字流程
 - [x] Axe 暗/亮主题 WCAG 扫描：0 violation
-- [x] Lighthouse 移动/桌面：Performance / Accessibility / Best Practices / SEO 均为 100
+- [x] Lighthouse 图谱恢复后移动/桌面：Performance / Accessibility / Best Practices / SEO 均为 100
 - [x] 残余风险已记录：未做线上 Pages field data、Safari/Firefox、NVDA/VoiceOver 或 GPU 实测

@@ -1,0 +1,26 @@
+flowchart LR
+  REQ["Request<br/>token ids"]:::input --> PREFILL["Prefill pool<br/>build cache / state"]:::source
+  PREFILL --> MANIFEST["transfer manifest<br/>named cache + recurrent + conv states"]:::state
+  MANIFEST --> DECODE["Decode pool<br/>one or more new tokens"]:::source
+  DECODE --> LOGITS["logits / sampled token"]:::output
+
+  subgraph PARALLEL["Runtime parallel boundaries · deployment assumptions"]
+    direction TB
+    TP1["TP rank"]:::deploy <--> TP2["TP rank"]:::deploy
+    ROUTER["MoE router"]:::deploy --> REMOTE["remote expert shard"]:::deploy --> COMBINE["weighted combine"]:::deploy
+    NETWORK["network boundary<br/>bandwidth + efficiency + topology"]:::deploy
+    TP1 -. "collective" .-> NETWORK
+    ROUTER -. "dispatch" .-> NETWORK
+    NETWORK -. "combine" .-> COMBINE
+  end
+
+  PREFILL -.-> PARALLEL
+  DECODE -.-> PARALLEL
+  FORMULA["communication labels are payload formulas<br/>not fixed wire time or benchmark latency"]:::note -.-> NETWORK
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef state fill:#352c43,stroke:#d5aaff,color:#faf5ff;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef deploy fill:#3d3425,stroke:#ffb86b,color:#fff9ec,stroke-dasharray:5 4;
+  classDef note fill:#492d34,stroke:#ff8585,color:#fff3f3;

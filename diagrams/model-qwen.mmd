@@ -1,0 +1,60 @@
+flowchart TB
+  TXT["input_ids → text embedding<br/>B × S × 5120"]:::input
+  PIX["optional pixels"]:::input --> VISION["Vision tower<br/>hidden 1152 · 27 blocks<br/>PatchMerger → 5120"]:::config
+  VISION -. "masked scatter" .-> TXT
+  TXT --> POS["MRoPE position embeddings"]:::source
+
+  subgraph STACK["DecoderLayer × 64 · schedule [linear, linear, linear, full] × 16"]
+    direction TB
+    H0["layer input<br/>B × S × 5120"]:::source
+    N1["input RMSNorm"]:::source
+    SELECT{"configured attention type"}:::config
+    H0 --> N1 --> SELECT
+
+    subgraph LINEAR["48 × Gated DeltaNet branch"]
+      direction LR
+      LQKV["combined QKV<br/>5120 → 10240<br/>Q 16×128 · K 16×128 · V 48×128"]:::source
+      CONV["grouped Conv1d<br/>kernel 4"]:::source
+      GATE["beta + decay gates"]:::source
+      STATE["FP32 recurrent state<br/>B × 48 × 128 × 128"]:::state
+      LOUT["gated RMSNorm<br/>6144 → 5120"]:::source
+      LQKV --> CONV --> GATE --> STATE --> LOUT
+    end
+
+    subgraph FULL["16 × Gated GQA branch"]
+      direction LR
+      FQ["q_proj with output gate<br/>5120 → 12288<br/>split Q + gate"]:::source
+      FKV["K / V<br/>each 5120 → 1024<br/>4 KV heads × 256"]:::source
+      FROPE["QK-Norm + partial MRoPE<br/>64 of 256 dims"]:::source
+      FCACHE["growing KV cache<br/>16 layers · 4 heads"]:::state
+      FATT["24 Q heads attend to 4 KV heads<br/>output width 6144"]:::source
+      FOUT["sigmoid / swish output gate<br/>o_proj 6144 → 5120"]:::source
+      FQ --> FROPE --> FATT --> FOUT
+      FKV --> FROPE --> FCACHE --> FATT
+    end
+
+    SELECT -->|linear layer| LQKV
+    SELECT -->|full layer| FQ
+    SELECT -->|full layer| FKV
+    LOUT --> ARES["attention residual add"]:::source
+    FOUT --> ARES
+    H0 -. "skip" .-> ARES
+    ARES --> N2["post-attention RMSNorm"]:::source
+    N2 --> MLP["SwiGLU in every layer<br/>5120 → 17408 → 5120"]:::source
+    MLP --> MRES["MLP residual add<br/>next layer input"]:::source
+    ARES -. "skip" .-> MRES
+  end
+
+  POS --> H0
+  MRES --> NORM["Final RMSNorm"]:::source --> HEAD["independent lm_head<br/>5120 → 248320"]:::output
+  MTP["config: mtp hidden layers = 1<br/>current reference has no MTP forward"]:::warn -.-> HEAD
+  CACHE_SUM["reference state = 16-layer GQA KV<br/>+ 48 recurrent states + 48 conv states"]:::note -.-> STATE
+  CACHE_SUM -.-> FCACHE
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef state fill:#352c43,stroke:#d5aaff,color:#faf5ff;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef config fill:#263856,stroke:#83b7ff,color:#f4f7fa;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef note fill:#3d3425,stroke:#ffb86b,color:#fff9ec;

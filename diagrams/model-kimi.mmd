@@ -1,0 +1,79 @@
+flowchart TB
+  TXT["text embedding<br/>B × S × 7168"]:::input
+  PIX["pixel input"]:::input --> VISION["MoonViT<br/>hidden 1024 · 27 layers<br/>projector → 7168"]:::config
+  VISION -. "replace image placeholders" .-> TXT
+
+  subgraph STACK["DecoderLayer × 93 · 69 KDA + 24 Gated MLA"]
+    direction TB
+    H0["layer input / prefix_sum<br/>B × S × 7168"]:::source
+    AIN["apply existing AttnRes before attention<br/>push prefix at layers 0,12,…,84 · 8 times"]:::source
+    N1["input RMSNorm"]:::source
+    ASEL{"configured attention type"}:::config
+    H0 --> AIN --> N1 --> ASEL
+
+    subgraph KDA["Kimi Delta Attention branch · 69 layers"]
+      direction LR
+      KQKV["Q / K / V projections<br/>each 7168 → 96×128"]:::source
+      KCONV["three ShortConv paths<br/>kernel 4"]:::source
+      KSTATE["recurrent delta state<br/>B × 96 × 128 × 128"]:::state
+      KOUT["output gate + gated norm<br/>12288 → 7168"]:::source
+      KQKV --> KCONV --> KSTATE --> KOUT
+    end
+
+    subgraph MLA["Gated MLA branch · 24 layers · no RoPE"]
+      direction LR
+      MQ["Q LoRA<br/>7168 → 1536 → 96×192"]:::source
+      MKV["compressed KV<br/>7168 → latent 512 + remainder 64"]:::source
+      MEXP["expand latent<br/>K nope 96×128 · V 96×128"]:::source
+      MK["K 96×192<br/>V 96×128"]:::source
+      MCACHE["reference cache<br/>expanded K + V"]:::state
+      MOPT["optimized / theoretical<br/>latent 512 + key remainder 64"]:::optimized
+      MATT["attention output width 12288<br/>sigmoid gate · o_proj → 7168"]:::source
+      MQ --> MATT
+      MKV --> MEXP --> MK --> MCACHE --> MATT
+      MKV -.-> MOPT
+    end
+
+    ASEL -->|linear layer| KQKV
+    ASEL -->|full layer| MQ
+    ASEL -->|full layer| MKV
+    KOUT --> ASUM["attention prefix_sum update"]:::source
+    MATT --> ASUM
+    H0 -. "residual when retained" .-> ASUM
+    ASUM --> AMLP["apply AttnRes before MLP"]:::source
+    AMLP --> N2["post-attention RMSNorm"]:::source
+    N2 --> FSEL{"FFN type by layer index"}:::config
+
+    subgraph FFN["FFN branch in every layer"]
+      direction LR
+      DENSE["layer 0<br/>Dense MLP"]:::source
+      ROUTER["layers 1–92 router<br/>896 experts · top-16"]:::source
+      DOWN["routed down projection<br/>7168 → 3584"]:::source
+      EXPERT["latent routed experts"]:::source
+      UP["up projection<br/>3584 → 7168"]:::source
+      SHARED["2 shared experts<br/>7168 path"]:::source
+      MSUM["routed + shared"]:::source
+      ROUTER --> DOWN --> EXPERT --> UP --> MSUM
+      SHARED --> MSUM
+    end
+    FSEL -->|layer 0| DENSE
+    FSEL -->|layers 1–92| ROUTER
+    FSEL -->|layers 1–92| SHARED
+    DENSE --> FSUM["FFN prefix_sum update<br/>next layer input"]:::source
+    MSUM --> FSUM
+    ASUM -. "residual" .-> FSUM
+  end
+
+  TXT --> H0
+  FSUM --> FINAL["output AttnRes + Final RMSNorm"]:::source --> HEAD["tied lm_head<br/>7168 → 163840"]:::output
+  UNKNOWN["KDA recurrent / conv state exists<br/>exact external FLA dtype-layout not fully evidenced"]:::warn -.-> KSTATE
+  NOMTP["num_nextn_predict_layers = 0<br/>no built-in MTP"]:::note -.-> HEAD
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef state fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef optimized fill:#263856,stroke:#83b7ff,color:#f4f7fa,stroke-dasharray:5 4;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef config fill:#263856,stroke:#83b7ff,color:#f4f7fa;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef note fill:#3d3425,stroke:#ffb86b,color:#fff9ec;

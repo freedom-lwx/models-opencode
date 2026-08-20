@@ -1,0 +1,75 @@
+flowchart TB
+  IN["input_ids<br/>B × S"]:::input --> EMB["Embedding<br/>V → 6144"]:::source --> ROPE["interleaved RoPE"]:::source
+
+  subgraph STACK["DecoderLayer × 78 · layers 0–2 Dense · layers 3–77 MoE"]
+    direction TB
+    H0["layer input<br/>B × S × 6144"]:::source
+    N1["input RMSNorm"]:::source
+    H0 --> N1
+
+    subgraph MLA["MLA attention path in every layer"]
+      direction LR
+      Q["Q LoRA<br/>6144 → 2048 → 64×256<br/>nope 192 + rope 64"]:::source
+      CKV["compressed KV projection<br/>6144 → latent 512 + rope 64"]:::source
+      EXPAND["kv_b_proj expands latent<br/>K nope 64×192 · V 64×256"]:::source
+      K["K = nope 192 + rope 64<br/>64 heads × 256"]:::source
+      RCACHE["reference cache update<br/>expanded K 64×256 + V 64×256"]:::state
+      OPT["optimized / theoretical cache<br/>latent 512 + rope remainder 64"]:::optimized
+      ATT["DSA-masked attention<br/>output 64×256 = 16384"]:::source
+      OP["o_proj<br/>16384 → 6144"]:::source
+      Q --> ATT
+      CKV --> EXPAND --> K --> RCACHE --> ATT --> OP
+      CKV -.-> OPT
+    end
+
+    subgraph DSA["DSA index input to MLA"]
+      direction LR
+      DSEL{"indexer type for this layer"}:::config
+      FULL["21 full Indexers<br/>key dim 128 · 32 index heads"]:::source
+      TOPK["ReLU scores → top-2048 indices"]:::source
+      SHARED["57 shared layers<br/>reuse previous topk_indices"]:::source
+      DSEL -->|full| FULL --> TOPK
+      DSEL -->|shared| SHARED
+    end
+
+    N1 --> Q
+    N1 --> CKV
+    N1 --> DSEL
+    TOPK --> ATT
+    SHARED --> ATT
+    OP --> ARES["attention residual add"]:::source
+    H0 -. "skip" .-> ARES
+    ARES --> N2["post-attention RMSNorm"]:::source
+    N2 --> FSEL{"FFN type by layer index"}:::config
+
+    subgraph FFN["FFN branch in every layer"]
+      direction LR
+      DENSE["layers 0–2<br/>Dense SwiGLU"]:::source
+      ROUTER["layers 3–77 router<br/>256 routed experts · top-8"]:::source
+      ROUTED["weighted routed experts"]:::source
+      SHARE["1 shared expert"]:::source
+      SUM["routed + shared"]:::source
+      ROUTER --> ROUTED --> SUM
+      SHARE --> SUM
+    end
+    FSEL -->|0–2| DENSE
+    FSEL -->|3–77| ROUTER
+    FSEL -->|3–77| SHARE
+    DENSE --> FRES["FFN residual add<br/>next layer input"]:::source
+    SUM --> FRES
+    ARES -. "skip" .-> FRES
+  end
+
+  ROPE --> H0
+  FRES --> FINAL["Final RMSNorm"]:::source --> HEAD["independent lm_head"]:::output
+  BOUNDARY["current HF/reference stores expanded K/V<br/>576-dim cache is not the reference path"]:::warn -.-> RCACHE
+  LINEAGE["source proves cross-layer index reuse<br/>not an exclusivity / originality claim"]:::note -.-> TOPK
+
+  classDef input fill:#223146,stroke:#83b7ff,color:#f4f7fa;
+  classDef source fill:#17343a,stroke:#66d5c2,color:#f4f7fa;
+  classDef config fill:#263856,stroke:#83b7ff,color:#f4f7fa;
+  classDef state fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef optimized fill:#263856,stroke:#83b7ff,color:#f4f7fa,stroke-dasharray:5 4;
+  classDef output fill:#27324b,stroke:#83b7ff,color:#f4f7fa;
+  classDef warn fill:#492d34,stroke:#ff8585,color:#fff3f3;
+  classDef note fill:#3d3425,stroke:#ffb86b,color:#fff9ec;

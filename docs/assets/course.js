@@ -30,15 +30,17 @@ function setupTheme() {
 }
 
 function setupNavigation() {
-  const sections = [...$$('[data-lesson]'), $('#models'), $('#comparison'), $('#sources')].filter(Boolean);
+  const sections = [...$$('[data-lesson]'), $('#models'), $('#systems'), $('#comparison'), $('#sources')].filter(Boolean);
   const nav = $('.site-header nav');
   const links = $$('a', nav);
   const progress = $('#course-progress');
   if (!sections.length || !nav || !links.length || !progress) return;
 
-  const navigationTarget = (id) => (
-    id === 'comparison' || id === 'sources' || id.startsWith('model-') || id.startsWith('source-') ? 'models' : id
-  );
+  const navigationTarget = (id) => {
+    if (id.startsWith('system-')) return 'systems';
+    if (id === 'comparison' || id === 'sources' || id.startsWith('model-') || id.startsWith('source-')) return 'models';
+    return id;
+  };
   const setCurrent = (id) => {
     let activeLink = null;
     links.forEach((link) => {
@@ -51,11 +53,17 @@ function setupNavigation() {
       nav.scrollTo({ left: Math.max(0, activeLink.offsetLeft - (nav.clientWidth - activeLink.offsetWidth) / 2), behavior: 'auto' });
     }
   };
+  const alignHashTarget = () => {
+    const target = document.getElementById(location.hash.slice(1));
+    if (target) target.scrollIntoView({ block: 'start', behavior: 'auto' });
+  };
   const syncHash = () => {
     const id = location.hash.slice(1);
     if (id && links.some((link) => link.hash === `#${navigationTarget(id)}`)) setCurrent(id);
+    if (id) requestAnimationFrame(alignHashTarget);
   };
   syncHash();
+  addEventListener('load', alignHashTarget, { once: true });
   addEventListener('hashchange', syncHash);
 
   let scheduled = false;
